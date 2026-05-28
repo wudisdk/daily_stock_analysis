@@ -162,6 +162,120 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
         self.assertEqual(fetcher._convert_stock_code("605218"), "605218.SH")
         self.assertEqual(fetcher._convert_stock_code("600519.SS"), "600519.SH")
 
+    def test_get_daily_basic_snapshot_returns_latest_valuation_fields(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.trade_cal.return_value = pd.DataFrame(
+            {"cal_date": ["20260318", "20260317"], "is_open": [1, 1]}
+        )
+        fetcher._api.daily_basic.return_value = pd.DataFrame(
+            {
+                "ts_code": ["600519.SH"],
+                "trade_date": ["20260318"],
+                "turnover_rate": [0.82],
+                "volume_ratio": [1.25],
+                "pe_ttm": [25.6],
+                "pb": [7.8],
+                "total_mv": [1800000.0],
+                "circ_mv": [1500000.0],
+            }
+        )
+
+        with patch.object(
+            fetcher,
+            "_get_china_now",
+            side_effect=[datetime(2026, 3, 18, 18, 0)] * 4,
+        ), patch.object(fetcher, "_check_rate_limit"):
+            snapshot = fetcher.get_daily_basic_snapshot("600519")
+
+        self.assertIsNotNone(snapshot)
+        assert snapshot is not None
+        self.assertEqual(snapshot["ts_code"], "600519.SH")
+        self.assertEqual(snapshot["trade_date"], "20260318")
+        self.assertAlmostEqual(snapshot["turnover_rate"], 0.82)
+        self.assertAlmostEqual(snapshot["volume_ratio"], 1.25)
+        self.assertAlmostEqual(snapshot["pe_ttm"], 25.6)
+        self.assertAlmostEqual(snapshot["pb"], 7.8)
+        self.assertAlmostEqual(snapshot["total_mv"], 1800000.0 * 10000)
+        self.assertEqual(snapshot["unit_normalized"]["total_mv"], "yuan")
+        fetcher._api.daily_basic.assert_called_once()
+
+    def test_realtime_quote_supplements_missing_fields_from_daily_basic(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.quotation.return_value = pd.DataFrame(
+            {
+                "name": ["贵州茅台"],
+                "price": [1600.0],
+                "pct_chg": [1.2],
+                "change": [19.0],
+                "vol": [10000],
+                "amount": [16000000.0],
+                "high": [1610.0],
+                "low": [1580.0],
+                "open": [1590.0],
+                "pre_close": [1581.0],
+            }
+        )
+        fetcher._api.trade_cal.return_value = pd.DataFrame(
+            {"cal_date": ["20260318", "20260317"], "is_open": [1, 1]}
+        )
+        fetcher._api.daily_basic.return_value = pd.DataFrame(
+            {
+                "ts_code": ["600519.SH"],
+                "trade_date": ["20260318"],
+                "turnover_rate": [0.82],
+                "volume_ratio": [1.25],
+                "pe_ttm": [25.6],
+                "pb": [7.8],
+                "total_mv": [1800000.0],
+                "circ_mv": [1500000.0],
+            }
+        )
+
+        with patch.object(
+            fetcher,
+            "_get_china_now",
+            side_effect=[datetime(2026, 3, 18, 18, 0)] * 4,
+        ), patch.object(fetcher, "_check_rate_limit"):
+            quote = fetcher.get_realtime_quote("600519")
+
+        self.assertIsNotNone(quote)
+        assert quote is not None
+        self.assertAlmostEqual(quote.volume_ratio, 1.25)
+        self.assertAlmostEqual(quote.turnover_rate, 0.82)
+        self.assertAlmostEqual(quote.pe_ratio, 25.6)
+        self.assertAlmostEqual(quote.pb_ratio, 7.8)
+        self.assertAlmostEqual(quote.total_mv, 1800000.0 * 10000)
+        self.assertAlmostEqual(quote.circ_mv, 1500000.0 * 10000)
+
+    def test_get_fina_indicator_snapshot_applies_point_in_time_ann_date_filter(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.fina_indicator.return_value = pd.DataFrame(
+            {
+                "ts_code": ["600519.SH", "600519.SH", "600519.SH"],
+                "ann_date": ["20260430", "20260329", "20251030"],
+                "end_date": ["20260331", "20251231", "20250930"],
+                "roe": [7.0, 28.5, 21.1],
+                "grossprofit_margin": [90.0, 91.5, 90.5],
+                "netprofit_margin": [50.0, 52.1, 51.0],
+            }
+        )
+
+        with patch.object(fetcher, "_check_rate_limit"):
+            snapshot = fetcher.get_fina_indicator_snapshot(
+                "600519",
+                asof_date="20260330",
+                start_date="20250101",
+                limit=2,
+            )
+
+        self.assertIsNotNone(snapshot)
+        assert snapshot is not None
+        self.assertEqual(snapshot["asof_date"], "20260330")
+        self.assertEqual(snapshot["point_in_time_filter"], "ann_date <= asof_date")
+        self.assertEqual(snapshot["latest"]["ann_date"], "20260329")
+        self.assertEqual(len(snapshot["recent"]), 2)
+        self.assertTrue(all(int(row["ann_date"]) <= 20260330 for row in snapshot["recent"]))
+
     @patch.dict(sys.modules, {"tushare": MagicMock()})
     def test_legacy_realtime_quote_keeps_sz_hint_as_stock_symbol(self) -> None:
         fetcher = self._make_fetcher()
@@ -183,7 +297,8 @@ class TestTushareFetcherFollowUps(unittest.TestCase):
             ]
         )
 
-        quote = fetcher.get_realtime_quote("SZ000001")
+        with patch.object(fetcher, "_supplement_quote_from_daily_basic"):
+            quote = fetcher.get_realtime_quote("SZ000001")
 
         self.assertIsNotNone(quote)
         self.assertEqual(quote.code, "000001")

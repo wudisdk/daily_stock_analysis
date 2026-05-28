@@ -47,6 +47,50 @@ _ETF_SH_PREFIXES = ('51', '52', '56', '58')
 _ETF_SZ_PREFIXES = ('15', '16', '18')
 _ETF_ALL_PREFIXES = _ETF_SH_PREFIXES + _ETF_SZ_PREFIXES
 
+_DAILY_BASIC_FIELDS = (
+    "ts_code",
+    "trade_date",
+    "close",
+    "turnover_rate",
+    "turnover_rate_f",
+    "volume_ratio",
+    "pe",
+    "pe_ttm",
+    "pb",
+    "ps",
+    "ps_ttm",
+    "dv_ratio",
+    "dv_ttm",
+    "total_share",
+    "float_share",
+    "free_share",
+    "total_mv",
+    "circ_mv",
+)
+
+_FINA_INDICATOR_FIELDS = (
+    "ts_code",
+    "ann_date",
+    "end_date",
+    "roe",
+    "roe_waa",
+    "roa",
+    "roic",
+    "grossprofit_margin",
+    "netprofit_margin",
+    "debt_to_assets",
+    "ocf_to_or",
+    "q_sales_yoy",
+    "q_op_yoy",
+    "q_netprofit_yoy",
+    "q_netprofit_qoq",
+    "q_gr_yoy",
+    "q_profit_yoy",
+    "q_profit_qoq",
+    "ocf_to_profit",
+    "rd_exp",
+)
+
 
 def _is_etf_code(stock_code: str) -> bool:
     """
@@ -709,7 +753,7 @@ class TushareFetcher(BaseFetcher):
                 row = df.iloc[0]
                 logger.debug(f"Tushare Pro 实时行情获取成功: {stock_code}")
 
-                return UnifiedRealtimeQuote(
+                quote = UnifiedRealtimeQuote(
                     code=normalized_code,
                     name=str(row.get('name', '')),
                     source=RealtimeSource.TUSHARE,
@@ -727,6 +771,8 @@ class TushareFetcher(BaseFetcher):
                     pb_ratio=safe_float(row.get('pb')),
                     total_mv=safe_float(row.get('total_mv')),
                 )
+                self._supplement_quote_from_daily_basic(stock_code, quote)
+                return quote
         except Exception as e:
             # 仅记录调试日志，不报错，继续尝试降级
             logger.debug(f"Tushare Pro 实时行情不可用 (可能是积分不足): {e}")
@@ -756,7 +802,7 @@ class TushareFetcher(BaseFetcher):
                 change_pct = (change_amount / pre_close) * 100
 
             # 构建统一对象
-            return UnifiedRealtimeQuote(
+            quote = UnifiedRealtimeQuote(
                 code=normalized_code,
                 name=str(row['name']),
                 source=RealtimeSource.TUSHARE,
@@ -770,10 +816,218 @@ class TushareFetcher(BaseFetcher):
                 open_price=safe_float(row['open']),
                 pre_close=pre_close,
             )
+            self._supplement_quote_from_daily_basic(stock_code, quote)
+            return quote
 
         except Exception as e:
             logger.warning(f"Tushare (旧版) 获取实时行情失败 {stock_code}: {e}")
             return None
+
+    def _daily_basic_trade_date_candidates(self, trade_date: Optional[str] = None) -> List[str]:
+        """Return latest-first trade-date candidates for daily_basic."""
+        if trade_date:
+            return [str(trade_date).replace("-", "").replace("/", "").strip()]
+
+        china_now = self._get_china_now()
+        trade_dates = self._get_trade_dates(china_now.strftime("%Y%m%d"))
+        if not trade_dates:
+            return []
+
+        selected = self.get_trade_time(early_time="00:00", late_time="17:30")
+        candidates: List[str] = []
+        if selected:
+            candidates.append(selected)
+            if selected in trade_dates:
+                idx = trade_dates.index(selected)
+                if idx + 1 < len(trade_dates):
+                    candidates.append(trade_dates[idx + 1])
+        else:
+            candidates.extend(trade_dates[:2])
+
+        deduped: List[str] = []
+        for value in candidates:
+            if value and value not in deduped:
+                deduped.append(value)
+        return deduped
+
+    def get_daily_basic_snapshot(
+        self,
+        stock_code: str,
+        trade_date: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a Tushare daily_basic point-in-time valuation/liquidity row."""
+        if self._api is None:
+            return None
+        if _is_hk_market(stock_code) or _is_us_code(stock_code) or _is_etf_code(stock_code):
+            return None
+
+        from .realtime_types import safe_float
+
+        ts_code = self._convert_stock_code(stock_code)
+        fields = ",".join(_DAILY_BASIC_FIELDS)
+        for candidate_date in self._daily_basic_trade_date_candidates(trade_date):
+            try:
+                df = self._call_api_with_rate_limit(
+                    "daily_basic",
+                    ts_code=ts_code,
+                    trade_date=candidate_date,
+                    fields=fields,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[Tushare] daily_basic %s %s failed: %s",
+                    ts_code,
+                    candidate_date,
+                    exc,
+                )
+                continue
+
+            if df is None or df.empty:
+                continue
+
+            row = df.iloc[0]
+            payload = {
+                "ts_code": str(row.get("ts_code") or ts_code),
+                "trade_date": str(row.get("trade_date") or candidate_date),
+                "source": "tushare.daily_basic",
+            }
+            for field in _DAILY_BASIC_FIELDS:
+                if field in ("ts_code", "trade_date"):
+                    continue
+                value = safe_float(row.get(field))
+                if field in ("total_mv", "circ_mv") and value is not None:
+                    value *= 10000.0
+                payload[field] = value
+            payload["unit_normalized"] = {"total_mv": "yuan", "circ_mv": "yuan"}
+            return payload
+
+        return None
+
+    def get_fina_indicator_snapshot(
+        self,
+        stock_code: str,
+        asof_date: Optional[str] = None,
+        start_date: Optional[str] = None,
+        limit: int = 4,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch recent fina_indicator rows using ann_date <= asof_date."""
+        if self._api is None:
+            return None
+        if _is_hk_market(stock_code) or _is_us_code(stock_code) or _is_etf_code(stock_code):
+            return None
+
+        from .realtime_types import safe_float
+
+        asof = (
+            str(asof_date).replace("-", "").replace("/", "").strip()
+            if asof_date
+            else self.get_trade_time(early_time="00:00", late_time="17:30")
+        )
+        if not asof:
+            return None
+
+        if start_date:
+            start = str(start_date).replace("-", "").replace("/", "").strip()
+        else:
+            start = (datetime.strptime(asof, "%Y%m%d") - timedelta(days=760)).strftime("%Y%m%d")
+
+        ts_code = self._convert_stock_code(stock_code)
+        fields = ",".join(_FINA_INDICATOR_FIELDS)
+        try:
+            df = self._call_api_with_rate_limit(
+                "fina_indicator",
+                ts_code=ts_code,
+                start_date=start,
+                end_date=asof,
+                fields=fields,
+            )
+        except Exception as exc:
+            logger.debug("[Tushare] fina_indicator %s failed: %s", ts_code, exc)
+            return None
+
+        if df is None or df.empty:
+            return None
+
+        df = df.copy()
+        for column in _FINA_INDICATOR_FIELDS:
+            if column not in df.columns:
+                df[column] = pd.NA
+        for column in ("ann_date", "end_date"):
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+        df = df[df["ann_date"].notna() & (df["ann_date"] <= int(asof))]
+        if df.empty:
+            return None
+        df = df.sort_values(["ann_date", "end_date"], ascending=[False, False]).head(max(1, int(limit)))
+
+        records: List[Dict[str, Any]] = []
+        for _, row in df.iterrows():
+            record = {
+                "ts_code": str(row.get("ts_code") or ts_code),
+                "ann_date": str(int(row["ann_date"])) if pd.notna(row.get("ann_date")) else None,
+                "end_date": str(int(row["end_date"])) if pd.notna(row.get("end_date")) else None,
+            }
+            for field in _FINA_INDICATOR_FIELDS:
+                if field in ("ts_code", "ann_date", "end_date"):
+                    continue
+                record[field] = safe_float(row.get(field))
+            records.append(record)
+
+        if not records:
+            return None
+
+        return {
+            "ts_code": ts_code,
+            "asof_date": asof,
+            "start_date": start,
+            "latest": records[0],
+            "recent": records,
+            "source": "tushare.fina_indicator",
+            "point_in_time_filter": "ann_date <= asof_date",
+        }
+
+    def _supplement_quote_from_daily_basic(self, stock_code: str, quote: UnifiedRealtimeQuote) -> None:
+        """Fill quote valuation/liquidity fields from Tushare daily_basic."""
+        missing_fields = (
+            "volume_ratio",
+            "turnover_rate",
+            "pe_ratio",
+            "pb_ratio",
+            "total_mv",
+            "circ_mv",
+        )
+        if all(getattr(quote, field, None) is not None for field in missing_fields):
+            return
+
+        try:
+            snapshot = self.get_daily_basic_snapshot(stock_code)
+        except Exception as exc:
+            logger.debug("[Tushare] daily_basic quote supplement failed: %s", exc)
+            return
+        if not snapshot:
+            return
+
+        field_map = {
+            "volume_ratio": "volume_ratio",
+            "turnover_rate": "turnover_rate",
+            "pe_ratio": "pe_ttm",
+            "pb_ratio": "pb",
+            "total_mv": "total_mv",
+            "circ_mv": "circ_mv",
+        }
+        filled: List[str] = []
+        for quote_field, daily_field in field_map.items():
+            if getattr(quote, quote_field, None) is None:
+                value = snapshot.get(daily_field)
+                if value is not None:
+                    setattr(quote, quote_field, value)
+                    filled.append(quote_field)
+
+        if filled:
+            logger.info(
+                "[Tushare] %s daily_basic supplemented quote fields: %s",
+                normalize_stock_code(stock_code),
+                ",".join(filled),
+            )
 
     def get_main_indices(self, region: str = "cn") -> Optional[List[dict]]:
         """

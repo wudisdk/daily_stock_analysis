@@ -741,14 +741,14 @@ class DataFetcherManager:
         return kept
 
     def _order_hk_daily_fetchers(self, fetchers: List[BaseFetcher]) -> List[BaseFetcher]:
-        """Prefer fast, reliable HK daily fallbacks before slower AkShare calls."""
+        """Prefer HK daily sources that work for multi-symbol hosted runs."""
         if not fetchers:
             return fetchers
 
         preferred_order = (
-            ["LongbridgeFetcher", "TushareFetcher", "YfinanceFetcher", "AkshareFetcher"]
+            ["LongbridgeFetcher", "YfinanceFetcher", "TushareFetcher", "AkshareFetcher"]
             if self._longbridge_preferred(capability="daily_data")
-            else ["TushareFetcher", "YfinanceFetcher", "AkshareFetcher", "LongbridgeFetcher"]
+            else ["YfinanceFetcher", "TushareFetcher", "AkshareFetcher", "LongbridgeFetcher"]
         )
         order = {name: index for index, name in enumerate(preferred_order)}
         ordered = sorted(fetchers, key=lambda f: (order.get(f.name, len(order)), f.priority))

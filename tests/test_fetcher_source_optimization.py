@@ -182,7 +182,7 @@ class TestFetcherSourceOptimization(unittest.TestCase):
         longbridge.get_daily_data.assert_not_called()
 
     @patch("src.config.get_config")
-    def test_hk_daily_route_tries_yfinance_before_akshare_after_tushare(self, mock_get_config):
+    def test_hk_daily_route_prefers_yfinance_before_tushare_and_akshare(self, mock_get_config):
         mock_get_config.return_value = SimpleNamespace(
             longbridge_app_key="",
             longbridge_app_secret="",
@@ -192,7 +192,7 @@ class TestFetcherSourceOptimization(unittest.TestCase):
         tushare = MagicMock()
         tushare.name = "TushareFetcher"
         tushare.priority = -1
-        tushare.get_daily_data.side_effect = Exception("hk_daily frequency limit")
+        tushare.get_daily_data.return_value = _make_daily_df()
 
         akshare = MagicMock()
         akshare.name = "AkshareFetcher"
@@ -210,9 +210,36 @@ class TestFetcherSourceOptimization(unittest.TestCase):
 
         self.assertFalse(df.empty)
         self.assertEqual(source, "YfinanceFetcher")
-        tushare.get_daily_data.assert_called_once()
+        tushare.get_daily_data.assert_not_called()
         yfinance.get_daily_data.assert_called_once()
         akshare.get_daily_data.assert_not_called()
+
+    @patch("src.config.get_config")
+    def test_hk_daily_route_keeps_tushare_as_yfinance_fallback(self, mock_get_config):
+        mock_get_config.return_value = SimpleNamespace(
+            longbridge_app_key="",
+            longbridge_app_secret="",
+            longbridge_access_token="",
+        )
+
+        tushare = MagicMock()
+        tushare.name = "TushareFetcher"
+        tushare.priority = -1
+        tushare.get_daily_data.return_value = _make_daily_df()
+
+        yfinance = MagicMock()
+        yfinance.name = "YfinanceFetcher"
+        yfinance.priority = 4
+        yfinance.get_daily_data.side_effect = Exception("yfinance temporarily unavailable")
+
+        manager = DataFetcherManager(fetchers=[tushare, yfinance])
+
+        df, source = manager.get_daily_data("HK01347", start_date="2026-05-01", end_date="2026-05-08")
+
+        self.assertFalse(df.empty)
+        self.assertEqual(source, "TushareFetcher")
+        yfinance.get_daily_data.assert_called_once()
+        tushare.get_daily_data.assert_called_once()
 
 
 if __name__ == "__main__":

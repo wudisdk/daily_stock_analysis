@@ -146,6 +146,70 @@ def test_daily_analysis_defaults_to_deepseek_v4_and_stable_search() -> None:
     assert env["REALTIME_SOURCE_PRIORITY"] == (
         "${{ vars.REALTIME_SOURCE_PRIORITY || 'tushare,tencent,akshare_sina,efinance,akshare_em' }}"
     )
+    assert env["GEMINI_API_KEY"] == ""
+    assert env["GEMINI_API_KEYS"] == ""
+    assert env["GEMINI_MODEL"] == ""
+    assert env["GEMINI_MODEL_FALLBACK"] == ""
+    assert "gemini-2.5-flash" not in WORKFLOW_PATH.read_text(encoding="utf-8")
+
+
+def test_daily_analysis_exports_replay_price_history() -> None:
+    workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "python -m src.services.ai_snapshot_audit" in workflow_text
+    assert "python -m src.services.ai_snapshot_replay_queue" in workflow_text
+    assert "python -m src.services.ai_snapshot_price_history" in workflow_text
+    assert "python -m src.services.ai_snapshot_gap_triage" in workflow_text
+    assert "set -o pipefail" in workflow_text
+    assert 'WORKFLOW_STEP_LOG="logs/stock_analysis_workflow_steps_$(date +%Y%m%d).log"' in workflow_text
+    assert 'tee -a "$WORKFLOW_STEP_LOG"' in workflow_text
+    assert "--queue-path reports/ai_snapshot/stock_ai_candidate_replay_queue_latest.jsonl" in workflow_text
+    assert "--database-path data/stock_analysis.db" in workflow_text
+    assert "--scope database" in workflow_text
+    assert "--snapshot-audit-path reports/ai_snapshot/stock_ai_candidate_snapshot_audit_latest.json" in workflow_text
+
+
+def test_daily_analysis_exports_run_log_audit() -> None:
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["analyze"]["steps"]
+    audit_step = next(
+        (
+            step
+            for step in steps
+            if "python -m src.services.daily_run_log_audit" in str(step.get("run", ""))
+        ),
+        None,
+    )
+
+    assert audit_step is not None
+    assert audit_step.get("if") == "always()"
+    assert audit_step["env"]["DEEPSEEK_API_KEY"] == "${{ secrets.DEEPSEEK_API_KEY }}"
+    assert audit_step["env"]["DEEPSEEK_API_KEYS"] == "${{ secrets.DEEPSEEK_API_KEYS }}"
+    assert audit_step["env"]["GEMINI_API_KEY"] == ""
+    assert audit_step["env"]["GEMINI_API_KEYS"] == ""
+    assert audit_step["env"]["GEMINI_MODEL"] == ""
+    assert audit_step["env"]["GEMINI_MODEL_FALLBACK"] == ""
+    assert audit_step["env"]["TUSHARE_TOKEN"] == "${{ secrets.TUSHARE_TOKEN }}"
+    assert audit_step["env"]["TAVILY_API_KEYS"] == "${{ secrets.TAVILY_API_KEYS }}"
+    assert audit_step["env"]["BOCHA_API_KEYS"] == "${{ secrets.BOCHA_API_KEYS }}"
+    assert audit_step["env"]["LONGBRIDGE_ACCESS_TOKEN"] == "${{ secrets.LONGBRIDGE_ACCESS_TOKEN }}"
+    assert "--log-dir logs" in audit_step["run"]
+    assert "--output-dir reports/run_audit" in audit_step["run"]
+    assert "daily_run_log_audit_latest.md" in audit_step["run"]
+    assert "python -m src.services.ai_snapshot_step_summary" in audit_step["run"]
+    assert "--input-dir reports/ai_snapshot" in audit_step["run"]
+    assert "--output-file reports/run_audit/ai_snapshot_step_summary_latest.md" in audit_step["run"]
+    assert "ai_snapshot_step_summary_latest.md" in audit_step["run"]
+    assert "stock_ai_candidate_gap_triage_latest.md" in audit_step["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in audit_step["run"]
+
+
+def test_daily_analysis_tails_latest_stock_analysis_log() -> None:
+    workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "logs/stock_analysis_$(date +%Y%m%d).log" not in workflow_text
+    assert "ls -t logs/stock_analysis_*.log" in workflow_text
+    assert 'tail -30 "$latest_log"' in workflow_text
 
 
 def test_network_smoke_uses_actions_runtime_env() -> None:
@@ -160,8 +224,22 @@ def test_network_smoke_uses_actions_runtime_env() -> None:
             "${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '90' }}"
         )
         assert env["DEEPSEEK_API_KEY"] == "${{ secrets.DEEPSEEK_API_KEY }}"
+        assert env["DEEPSEEK_API_KEYS"] == "${{ secrets.DEEPSEEK_API_KEYS }}"
+        assert env["LLM_DEEPSEEK_API_KEY"] == "${{ secrets.LLM_DEEPSEEK_API_KEY }}"
+        assert env["LLM_DEEPSEEK_API_KEYS"] == "${{ secrets.LLM_DEEPSEEK_API_KEYS }}"
+        assert env["GEMINI_API_KEY"] == ""
+        assert env["GEMINI_API_KEYS"] == ""
         assert env["TUSHARE_TOKEN"] == "${{ secrets.TUSHARE_TOKEN }}"
+        assert env["LONGBRIDGE_APP_KEY"] == "${{ secrets.LONGBRIDGE_APP_KEY }}"
+        assert env["LONGBRIDGE_APP_SECRET"] == "${{ secrets.LONGBRIDGE_APP_SECRET }}"
+        assert env["LONGBRIDGE_ACCESS_TOKEN"] == "${{ secrets.LONGBRIDGE_ACCESS_TOKEN }}"
         assert env["TAVILY_API_KEYS"] == "${{ secrets.TAVILY_API_KEYS }}"
+        assert env["BOCHA_API_KEYS"] == "${{ secrets.BOCHA_API_KEYS }}"
+        assert env["BRAVE_API_KEYS"] == "${{ secrets.BRAVE_API_KEYS }}"
+        assert env["SERPAPI_API_KEYS"] == "${{ secrets.SERPAPI_API_KEYS }}"
+        assert env["ANSPIRE_API_KEYS"] == "${{ secrets.ANSPIRE_API_KEYS }}"
+        assert env["MINIMAX_API_KEYS"] == "${{ secrets.MINIMAX_API_KEYS }}"
+        assert env["SEARXNG_BASE_URLS"] == "${{ secrets.SEARXNG_BASE_URLS }}"
         assert env["REALTIME_SOURCE_PRIORITY"] == (
             "${{ vars.REALTIME_SOURCE_PRIORITY || 'tushare,tencent,akshare_sina,efinance,akshare_em' }}"
         )
@@ -175,6 +253,35 @@ def test_network_smoke_steps_have_hard_timeouts() -> None:
 
     assert steps_by_name["Run pytest network smoke (non-blocking)"]["timeout-minutes"] == 8
     assert steps_by_name["Run quick smoke (non-blocking)"]["timeout-minutes"] == 10
+
+
+def test_network_smoke_writes_exit_status_and_audit_artifacts() -> None:
+    workflow_text = NETWORK_SMOKE_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    steps = workflow["jobs"]["smoke"]["steps"]
+    audit_step = next(
+        (
+            step
+            for step in steps
+            if "python -m src.services.network_smoke_audit" in str(step.get("run", ""))
+        ),
+        None,
+    )
+
+    assert "pytest-network.status" in workflow_text
+    assert "quick-smoke.status" in workflow_text
+    assert "${PIPESTATUS[0]}" in workflow_text
+    assert audit_step is not None
+    assert audit_step.get("if") == "always()"
+    assert audit_step["env"]["DEEPSEEK_API_KEY"] == "${{ secrets.DEEPSEEK_API_KEY }}"
+    assert audit_step["env"]["TUSHARE_TOKEN"] == "${{ secrets.TUSHARE_TOKEN }}"
+    assert audit_step["env"]["TAVILY_API_KEYS"] == "${{ secrets.TAVILY_API_KEYS }}"
+    assert audit_step["env"]["BOCHA_API_KEYS"] == "${{ secrets.BOCHA_API_KEYS }}"
+    assert audit_step["env"]["LONGBRIDGE_ACCESS_TOKEN"] == "${{ secrets.LONGBRIDGE_ACCESS_TOKEN }}"
+    assert "--output-dir reports/network_smoke" in audit_step["run"]
+    assert "network_smoke_audit_latest.md" in audit_step["run"]
+    assert '>> "$GITHUB_STEP_SUMMARY"' in audit_step["run"]
+    assert "reports/network_smoke/" in workflow_text
 
 
 def test_env_example_includes_provider_template_channel_examples() -> None:

@@ -109,6 +109,13 @@ def test_quote_block_maps_available_missing_fallback_and_explicit_stale() -> Non
     assert available.source == "akshare_em"
     assert available.items["price"].value == 1880.0
 
+    yfinance = AnalysisContextBuilder.build(
+        _artifacts(realtime_quote=_quote(RealtimeSource.YFINANCE))
+    ).blocks["quote"]
+    assert yfinance.status == ContextFieldStatus.AVAILABLE
+    assert yfinance.source == "yfinance"
+    assert "realtime_provider_fallback" not in yfinance.warnings
+
     missing = AnalysisContextBuilder.build(
         _artifacts(realtime_quote=None)
     ).blocks["quote"]
@@ -350,6 +357,48 @@ def test_fundamentals_marks_conflicting_capital_flow_without_hot_price_guard() -
     assert "price_flow_hot_without_confirmed_inflow" not in block.warnings
 
 
+def test_fundamentals_uses_trend_activity_for_price_flow_hot_guard() -> None:
+    pack = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "yfinance",
+                "price": 1880.0,
+                "volume_ratio": None,
+                "change_60d": None,
+            },
+            trend_result=_FakeTrend(
+                {
+                    "bias_ma5": 6.4,
+                    "volume_ratio_5d": 2.2,
+                    "signal_score": 64,
+                }
+            ),
+            fundamental_context={
+                "status": "ok",
+                "coverage": {"valuation": "ok", "capital_flow": "ok"},
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": -1_000_000.0,
+                            "inflow_5d": -2_000_000.0,
+                        }
+                    },
+                },
+            },
+        )
+    )
+
+    fundamentals = pack.blocks["fundamentals"]
+    factor_snapshot = pack.blocks["factor_snapshot"]
+    dimensions = {item["name"]: item for item in factor_snapshot.metadata["dimensions"]}
+
+    assert "capital_flow_broke_proxy" in fundamentals.warnings
+    assert "price_flow_hot_without_confirmed_inflow" in fundamentals.warnings
+    assert dimensions["de_risk"]["label"] == "flow_broke_price_flow_hot"
+
+
 def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> None:
     pack = AnalysisContextBuilder.build(
         _artifacts(
@@ -410,7 +459,7 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
     assert dimensions["industry_theme"]["label"] == "theme_tailwind"
     assert dimensions["quality_growth"]["label"] == "available"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
-    assert dimensions["de_risk"]["label"] == "flow_broke_price_hot"
+    assert dimensions["de_risk"]["label"] == "flow_broke_price_flow_hot"
     assert dimensions["data_coverage"]["label"] == "high"
     assert dimensions["risk"]["label"] == "has_risk_flags"
     assert dimensions["confidence"]["label"] == "medium"

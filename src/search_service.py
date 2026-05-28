@@ -209,13 +209,29 @@ class BaseSearchProvider(ABC):
             # 成功后减少错误计数
             if key in self._key_errors and self._key_errors[key] > 0:
                 self._key_errors[key] -= 1
+
+    def _key_log_label(self, key: str) -> str:
+        """Return a stable non-secret key label for provider diagnostics."""
+        with self._state_lock:
+            try:
+                return f"key#{self._api_keys.index(key) + 1}"
+            except ValueError:
+                return "key#unknown"
     
     def _record_error(self, key: str) -> None:
         """记录错误"""
         with self._state_lock:
             self._key_errors[key] = self._key_errors.get(key, 0) + 1
             error_count = self._key_errors[key]
-        logger.warning(f"[{self._name}] API Key {key[:8]}... 错误计数: {error_count}")
+        logger.warning("[%s] API Key %s 错误计数: %s", self._name, self._key_log_label(key), error_count)
+
+    def _record_response_error(self, key: str, response: SearchResponse) -> None:
+        """Record a provider response-level error."""
+        self._record_error(key)
+
+    def _unavailable_error_message(self) -> str:
+        """Build the error returned when no API key can be selected."""
+        return f"{self._name} 未配置 API Key"
     
     @abstractmethod
     def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
@@ -239,7 +255,7 @@ class BaseSearchProvider(ABC):
                 results=[],
                 provider=self._name,
                 success=False,
-                error_message=f"{self._name} 未配置 API Key"
+                error_message=self._unavailable_error_message()
             )
 
         start_time = time.time()
@@ -251,7 +267,7 @@ class BaseSearchProvider(ABC):
                 self._record_success(api_key)
                 logger.info(f"[{self._name}] 搜索 '{query}' 成功，返回 {len(response.results)} 条结果，耗时 {response.search_time:.2f}s")
             else:
-                self._record_error(api_key)
+                self._record_response_error(api_key, response)
 
             return response
 
@@ -294,9 +310,82 @@ class TavilySearchProvider(BaseSearchProvider):
     
     文档：https://docs.tavily.com/
     """
+
+    _QUOTA_COOLDOWN_SECONDS = 6 * 60 * 60
+    _QUOTA_ERROR_TOKENS = (
+        "quota",
+        "rate limit",
+        "too many requests",
+        "usage limit",
+        "set usage limit",
+        "exceeds your plan",
+        "upgrade your plan",
+        "monthly limit",
+        "credit",
+        "billing",
+        "insufficient",
+    )
     
     def __init__(self, api_keys: List[str]):
         super().__init__(api_keys, "Tavily")
+        self._quota_blocked_until: float = 0.0
+        self._quota_blocked_reason: Optional[str] = None
+
+    @property
+    def is_available(self) -> bool:
+        """Check API-key availability and Tavily quota circuit state."""
+        if not super().is_available:
+            return False
+
+        with self._state_lock:
+            if self._quota_blocked_until <= 0:
+                return True
+            if time.time() < self._quota_blocked_until:
+                return False
+
+            self._quota_blocked_until = 0.0
+            self._quota_blocked_reason = None
+            return True
+
+    def _get_next_key(self) -> Optional[str]:
+        if not self.is_available:
+            return None
+        return super()._get_next_key()
+
+    def _unavailable_error_message(self) -> str:
+        with self._state_lock:
+            reason = self._quota_blocked_reason
+            blocked_until = self._quota_blocked_until
+
+        if blocked_until and time.time() < blocked_until:
+            return f"{self._name} 暂停使用: {reason or 'API 配额或套餐限制'}"
+        return super()._unavailable_error_message()
+
+    @classmethod
+    def _is_quota_error(cls, error_message: Optional[str]) -> bool:
+        if not error_message:
+            return False
+        lowered = error_message.lower()
+        return any(token in lowered for token in cls._QUOTA_ERROR_TOKENS)
+
+    def _record_response_error(self, key: str, response: SearchResponse) -> None:
+        error_message = response.error_message or ""
+        if self._is_quota_error(error_message):
+            with self._state_lock:
+                self._key_errors[key] = max(self._key_errors.get(key, 0) + 1, 3)
+                self._quota_blocked_until = time.time() + self._QUOTA_COOLDOWN_SECONDS
+                self._quota_blocked_reason = error_message
+                error_count = self._key_errors[key]
+            logger.warning(
+                "[Tavily] API Key %s hit quota/plan limit; cooling down provider for %ss "
+                "(错误计数: %s)",
+                self._key_log_label(key),
+                self._QUOTA_COOLDOWN_SECONDS,
+                error_count,
+            )
+            return
+
+        super()._record_response_error(key, response)
     
     def _do_search(
         self,
@@ -361,8 +450,8 @@ class TavilySearchProvider(BaseSearchProvider):
             
         except Exception as e:
             error_msg = str(e)
-            # 检查是否是配额问题
-            if 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower():
+            # 检查是否是配额或套餐限制问题
+            if self._is_quota_error(error_msg):
                 error_msg = f"API 配额已用尽: {error_msg}"
             
             return SearchResponse(
@@ -391,7 +480,7 @@ class TavilySearchProvider(BaseSearchProvider):
                 results=[],
                 provider=self._name,
                 success=False,
-                error_message=f"{self._name} 未配置 API Key"
+                error_message=self._unavailable_error_message()
             )
 
         start_time = time.time()
@@ -403,7 +492,7 @@ class TavilySearchProvider(BaseSearchProvider):
                 self._record_success(api_key)
                 logger.info(f"[{self._name}] 搜索 '{query}' 成功，返回 {len(response.results)} 条结果，耗时 {response.search_time:.2f}s")
             else:
-                self._record_error(api_key)
+                self._record_response_error(api_key, response)
 
             return response
 

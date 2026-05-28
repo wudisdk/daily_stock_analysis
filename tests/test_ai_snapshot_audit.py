@@ -45,7 +45,14 @@ def _row(
             "dimensions": dimensions,
             "derived_from": ["quote", "technical", "fundamentals"],
         },
-        "data_coverage": {"factor_snapshot": {"status": "available"}},
+        "data_coverage": {
+            "quote": {"status": "available"},
+            "daily_bars": {"status": "available"},
+            "technical": {"status": "available"},
+            "fundamentals": {"status": "available"},
+            "factor_snapshot": {"status": "available"},
+            "news": {"status": "available"},
+        },
         "news_result_count": 3,
     }
 
@@ -142,3 +149,79 @@ def test_audit_snapshot_fails_sensitive_flash_and_missing_dated_file(tmp_path) -
     assert checks["low_sensitivity_boundary"]["status"] == "FAIL"
     assert checks["factor_snapshot_required_dimensions"]["status"] == "FAIL"
     assert checks["dated_snapshot_latest_trade_date"]["status"] == "FAIL"
+
+
+def test_audit_snapshot_warns_on_missing_critical_coverage_blocks(tmp_path) -> None:
+    snapshot_dir = tmp_path / "reports" / "ai_snapshot"
+    snapshot_dir.mkdir(parents=True)
+    latest_path = snapshot_dir / "stock_ai_candidate_snapshot_latest.jsonl"
+    dated_path = snapshot_dir / "stock_ai_candidate_snapshot_20260528.jsonl"
+    row = _row("688981")
+    row["data_coverage"] = {
+        "quote": {"status": "missing", "missing_reasons": ["realtime_quote_missing"]},
+        "daily_bars": {"status": "missing", "missing_reasons": ["today_missing"]},
+        "technical": {"status": "available"},
+        "factor_snapshot": {"status": "missing", "missing_reasons": ["technical_score_missing"]},
+        "news": {"status": "missing", "missing_reasons": ["news_context_missing"]},
+    }
+    _write_jsonl(latest_path, [row])
+    _write_jsonl(dated_path, [row])
+
+    audit = audit_snapshot(latest_path)
+
+    assert audit["overall_status"] == "WARN"
+    checks = {check["check_id"]: check for check in audit["checks"]}
+    coverage_check = checks["data_coverage_block_status"]
+    assert coverage_check["status"] == "WARN"
+    assert coverage_check["evidence"]["block_status_counts"]["quote"]["missing"] == 1
+    weak_blocks = {
+        item["block"]
+        for item in coverage_check["evidence"]["weak_block_rows"]
+    }
+    assert {"quote", "daily_bars", "factor_snapshot"} <= weak_blocks
+    critical_blocks = {
+        item["block"]
+        for item in coverage_check["evidence"]["critical_weak_block_rows"]
+    }
+    optional_blocks = {
+        item["block"]
+        for item in coverage_check["evidence"]["optional_weak_block_rows"]
+    }
+    assert {"quote", "daily_bars", "factor_snapshot"} <= critical_blocks
+    assert {"fundamentals", "news"} <= optional_blocks
+
+
+def test_audit_snapshot_tracks_optional_coverage_gaps_without_warning(tmp_path) -> None:
+    snapshot_dir = tmp_path / "reports" / "ai_snapshot"
+    snapshot_dir.mkdir(parents=True)
+    latest_path = snapshot_dir / "stock_ai_candidate_snapshot_latest.jsonl"
+    dated_path = snapshot_dir / "stock_ai_candidate_snapshot_20260528.jsonl"
+    row = _row("688981")
+    row["data_coverage"] = {
+        "quote": {"status": "available"},
+        "daily_bars": {"status": "available"},
+        "technical": {"status": "available"},
+        "factor_snapshot": {"status": "available"},
+        "fundamentals": {"status": "missing", "missing_reasons": ["fundamental_context_missing"]},
+        "news": {"status": "missing", "missing_reasons": ["news_context_missing"]},
+    }
+    _write_jsonl(latest_path, [row])
+    _write_jsonl(dated_path, [row])
+
+    audit = audit_snapshot(latest_path)
+
+    assert audit["overall_status"] == "PASS"
+    checks = {check["check_id"]: check for check in audit["checks"]}
+    coverage_check = checks["data_coverage_block_status"]
+    assert coverage_check["status"] == "PASS"
+    assert coverage_check["evidence"]["critical_weak_block_rows"] == []
+    optional_blocks = {
+        item["block"]
+        for item in coverage_check["evidence"]["optional_weak_block_rows"]
+    }
+    assert optional_blocks == {"fundamentals", "news"}
+    weak_blocks = {
+        item["block"]
+        for item in coverage_check["evidence"]["weak_block_rows"]
+    }
+    assert weak_blocks == {"fundamentals", "news"}

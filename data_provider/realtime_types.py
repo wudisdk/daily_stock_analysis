@@ -100,6 +100,7 @@ class RealtimeSource(Enum):
     TUSHARE = "tushare"             # Tushare Pro
     TENCENT = "tencent"             # 腾讯直连
     SINA = "sina"                   # 新浪直连
+    YFINANCE = "yfinance"           # YFinance（美股/港股/指数）
     STOOQ = "stooq"                 # Stooq 美股兜底
     LONGBRIDGE = "longbridge"       # 长桥（美股/港股兜底）
     FALLBACK = "fallback"           # 降级兜底

@@ -401,14 +401,23 @@ def _fundamental_guard_warnings(
         warnings.append(_CAPITAL_FLOW_CONFLICT_WARNING)
 
     quote = _to_dict(artifacts.realtime_quote)
+    trend = _to_dict(artifacts.trend_result)
     change_60d = _numeric_value(quote.get("change_60d"))
+    bias_ma5 = _numeric_value(trend.get("bias_ma5"))
     volume_ratio = _numeric_value(quote.get("volume_ratio"))
+    if volume_ratio is None:
+        volume_ratio = _numeric_value(trend.get("volume_ratio_5d"))
+    turnover_rate = _numeric_value(quote.get("turnover_rate"))
     has_confirmed_inflow = any(value is not None and value > 0 for value in present_flows)
     if (
-        change_60d is not None
-        and change_60d >= 25
-        and volume_ratio is not None
-        and volume_ratio >= 2.0
+        (
+            (change_60d is not None and change_60d >= 25)
+            or (bias_ma5 is not None and bias_ma5 > 5)
+        )
+        and (
+            (volume_ratio is not None and volume_ratio >= 2.0)
+            or (turnover_rate is not None and turnover_rate >= 5.0)
+        )
         and not has_confirmed_inflow
     ):
         warnings.append(_PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING)
@@ -714,11 +723,11 @@ def _de_risk_dimension(
     has_flow_conflict = _CAPITAL_FLOW_CONFLICT_WARNING in warning_set
 
     if has_flow_broke and has_price_hot:
-        label = "flow_broke_price_hot"
+        label = "flow_broke_price_flow_hot"
     elif has_flow_broke:
         label = "flow_broke"
     elif has_flow_conflict and has_price_hot:
-        label = "flow_conflict_price_hot"
+        label = "flow_conflict_price_flow_hot"
     elif has_price_hot:
         label = "price_flow_hot"
     elif has_flow_conflict:

@@ -21,6 +21,7 @@ from src.search_service import SearchService, TavilySearchProvider
 
 class _FakeTavilyClient:
     response_payload = {"results": []}
+    search_exception = None
     init_api_keys = []
     search_calls = []
 
@@ -29,11 +30,14 @@ class _FakeTavilyClient:
 
     def search(self, **kwargs):
         type(self).search_calls.append(kwargs)
+        if type(self).search_exception is not None:
+            raise type(self).search_exception
         return type(self).response_payload
 
     @classmethod
     def reset(cls) -> None:
         cls.response_payload = {"results": []}
+        cls.search_exception = None
         cls.init_api_keys = []
         cls.search_calls = []
 
@@ -50,6 +54,11 @@ class TestTavilySearchProvider(unittest.TestCase):
     def _patch_tavily(self, payload):
         _FakeTavilyClient.reset()
         _FakeTavilyClient.response_payload = payload
+        return patch.dict(sys.modules, {"tavily": _fake_tavily_module()})
+
+    def _patch_tavily_exception(self, exc: Exception):
+        _FakeTavilyClient.reset()
+        _FakeTavilyClient.search_exception = exc
         return patch.dict(sys.modules, {"tavily": _fake_tavily_module()})
 
     def test_provider_uses_news_topic_when_explicitly_requested(self) -> None:
@@ -121,6 +130,75 @@ class TestTavilySearchProvider(unittest.TestCase):
         self.assertTrue(resp.success)
         self.assertEqual(len(_FakeTavilyClient.search_calls), 1)
         self.assertNotIn("topic", _FakeTavilyClient.search_calls[0])
+
+    def test_quota_plan_limit_cools_down_provider_without_retry_loop(self) -> None:
+        provider = TavilySearchProvider(["dummy_key"])
+        quota_error = Exception(
+            "This request exceeds your plan's set usage limit. "
+            "Please upgrade your plan or contact support."
+        )
+
+        with self._patch_tavily_exception(quota_error):
+            first = provider.search("BABA latest news", max_results=3, days=3, topic="news")
+            second = provider.search("BABA analyst rating", max_results=3, days=3, topic="news")
+
+        self.assertFalse(first.success)
+        self.assertIn("API 配额已用尽", first.error_message)
+        self.assertFalse(provider.is_available)
+        self.assertFalse(second.success)
+        self.assertIn("Tavily 暂停使用", second.error_message)
+        self.assertEqual(len(_FakeTavilyClient.search_calls), 1)
+
+    def test_search_provider_error_logs_use_non_secret_key_labels(self) -> None:
+        secret_key = "zzsecret-alpha-123456"
+        provider = TavilySearchProvider([secret_key])
+
+        with self.assertLogs("src.search_service", level="WARNING") as logs:
+            provider._record_error(secret_key)
+
+        rendered = "\n".join(logs.output)
+        self.assertIn("key#1", rendered)
+        self.assertNotIn(secret_key, rendered)
+        self.assertNotIn(secret_key[:8], rendered)
+
+    def test_tavily_quota_log_uses_non_secret_key_label(self) -> None:
+        secret_key = "zzsecret-alpha-123456"
+        provider = TavilySearchProvider([secret_key])
+        quota_error = Exception(
+            "This request exceeds your plan's set usage limit. "
+            "Please upgrade your plan or contact support."
+        )
+
+        with self._patch_tavily_exception(quota_error), self.assertLogs(
+            "src.search_service",
+            level="WARNING",
+        ) as logs:
+            provider.search("BABA latest news", max_results=3, days=3, topic="news")
+
+        rendered = "\n".join(logs.output)
+        self.assertIn("key#1", rendered)
+        self.assertIn("cooling down provider", rendered)
+        self.assertNotIn(secret_key, rendered)
+        self.assertNotIn(secret_key[:8], rendered)
+
+    def test_quota_plan_limit_stops_comprehensive_intel_retries(self) -> None:
+        quota_error = Exception(
+            "This request exceeds your plan's set usage limit. "
+            "Please upgrade your plan or contact support."
+        )
+
+        with self._patch_tavily_exception(quota_error):
+            service = SearchService(
+                tavily_keys=["dummy_key"],
+                searxng_public_instances_enabled=False,
+                news_max_age_days=3,
+                news_strategy_profile="short",
+            )
+            intel = service.search_comprehensive_intel("BABA", "阿里巴巴", max_searches=3)
+
+        self.assertIn("latest_news", intel)
+        self.assertFalse(intel["latest_news"].success)
+        self.assertEqual(len(_FakeTavilyClient.search_calls), 1)
 
     def test_search_stock_news_keeps_tavily_results_with_supported_date_fields(self) -> None:
         published_dt = datetime.now(timezone.utc).replace(microsecond=0)

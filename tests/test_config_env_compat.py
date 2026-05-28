@@ -70,6 +70,27 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_load_from_env_prefers_deepseek_pro_when_gemini_key_also_exists(
+        self,
+        _mock_parse_litellm_yaml,
+        _mock_setup_env,
+    ) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "GEMINI_API_KEY": "legacy-gemini-key",
+                "GEMINI_MODEL": "gemini-2.5-flash",
+                "DEEPSEEK_API_KEY": "sk-deepseek-test-value",
+            },
+            clear=True,
+        ):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.litellm_model, "deepseek/deepseek-v4-pro")
+        self.assertEqual(config.litellm_fallback_models, [])
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_schedule_run_immediately_falls_back_to_legacy_run_immediately(
         self,
         _mock_parse_yaml,

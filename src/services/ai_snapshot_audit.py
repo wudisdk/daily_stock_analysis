@@ -32,6 +32,24 @@ REQUIRED_DIMENSIONS = {
     "risk",
     "confidence",
 }
+EXPECTED_COVERAGE_BLOCKS = (
+    "quote",
+    "daily_bars",
+    "technical",
+    "fundamentals",
+    "factor_snapshot",
+    "news",
+)
+CRITICAL_COVERAGE_BLOCKS = {
+    "quote",
+    "daily_bars",
+    "technical",
+    "factor_snapshot",
+}
+GOOD_COVERAGE_STATUSES = {
+    "available",
+    "not_supported",
+}
 FORBIDDEN_RAW_KEYS = {
     "api_key",
     "authorization",
@@ -343,18 +361,66 @@ def _audit_required_dimensions(checks: List[Dict[str, Any]], rows: Sequence[Mapp
 def _audit_data_coverage(checks: List[Dict[str, Any]], rows: Sequence[Mapping[str, Any]]) -> None:
     labels = Counter()
     weak_rows: List[Dict[str, Any]] = []
+    block_status_counts: Dict[str, Dict[str, int]] = {}
+    weak_block_rows: List[Dict[str, Any]] = []
+    critical_weak_block_rows: List[Dict[str, Any]] = []
+    optional_weak_block_rows: List[Dict[str, Any]] = []
     for idx, row in enumerate(rows, start=1):
         dimension = _dimension_map(row).get("data_coverage", {})
         label = _safe_text(dimension.get("label")) or "missing"
         labels[label] += 1
         if label not in {"high", "medium"}:
             weak_rows.append({"row": _row_identity(row, idx), "label": label})
+
+        coverage = row.get("data_coverage") if isinstance(row.get("data_coverage"), Mapping) else {}
+        for block_name in EXPECTED_COVERAGE_BLOCKS:
+            block = coverage.get(block_name) if isinstance(coverage, Mapping) else {}
+            status = _safe_text(block.get("status")) if isinstance(block, Mapping) else ""
+            status = status or "missing"
+            block_status_counts.setdefault(block_name, {})
+            block_status_counts[block_name][status] = block_status_counts[block_name].get(status, 0) + 1
+            if status in GOOD_COVERAGE_STATUSES:
+                continue
+            weak_item = {
+                "row": _row_identity(row, idx),
+                "block": block_name,
+                "status": status,
+                "critical_block": block_name in CRITICAL_COVERAGE_BLOCKS,
+                "missing_reasons": _safe_string_list(
+                    block.get("missing_reasons") if isinstance(block, Mapping) else []
+                ),
+            }
+            weak_block_rows.append(weak_item)
+            if block_name in CRITICAL_COVERAGE_BLOCKS:
+                critical_weak_block_rows.append(weak_item)
+            else:
+                optional_weak_block_rows.append(weak_item)
     _add_check(
         checks,
         "data_coverage_quality",
         "WARN" if weak_rows else "PASS",
         "some rows have weak data coverage" if weak_rows else "all rows have medium/high data coverage labels",
         {"label_counts": dict(labels), "weak_rows": weak_rows[:20]},
+    )
+    _add_check(
+        checks,
+        "data_coverage_block_status",
+        "WARN" if critical_weak_block_rows else "PASS",
+        "critical data coverage blocks are missing or weak"
+        if critical_weak_block_rows
+        else (
+            "critical data coverage blocks are available or explicitly not supported; optional gaps are tracked"
+            if optional_weak_block_rows
+            else "critical data coverage blocks are available or explicitly not supported"
+        ),
+        {
+            "expected_blocks": list(EXPECTED_COVERAGE_BLOCKS),
+            "critical_blocks": sorted(CRITICAL_COVERAGE_BLOCKS),
+            "block_status_counts": block_status_counts,
+            "weak_block_rows": weak_block_rows[:30],
+            "critical_weak_block_rows": critical_weak_block_rows[:30],
+            "optional_weak_block_rows": optional_weak_block_rows[:30],
+        },
     )
 
 
@@ -468,6 +534,17 @@ def _safe_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _safe_string_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    result: List[str] = []
+    for item in value:
+        text = _safe_text(item)
+        if text and text not in result:
+            result.append(text)
+    return result[:10]
 
 
 def _int_or_none(value: Any) -> Optional[int]:

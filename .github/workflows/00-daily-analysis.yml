@@ -76,12 +76,13 @@ jobs:
           LITELLM_LOG_LEVEL: ${{ vars.LITELLM_LOG_LEVEL || secrets.LITELLM_LOG_LEVEL || 'ERROR' }}
           LLM_CHANNELS: ${{ vars.LLM_CHANNELS || secrets.LLM_CHANNELS }}
 
-          # Gemini AI（主选）
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3-flash-preview' }}
-          GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || secrets.GEMINI_MODEL_FALLBACK || 'gemini-2.5-flash' }}
-          GEMINI_REQUEST_DELAY: '3.0'
+          # Legacy Gemini is intentionally disabled for the daily job.
+          # Use LLM_CHANNELS=gemini explicitly if Gemini is needed.
+          GEMINI_API_KEY: ''
+          GEMINI_API_KEYS: ''
+          GEMINI_MODEL: ''
+          GEMINI_MODEL_FALLBACK: ''
+          GEMINI_REQUEST_DELAY: '0'
           
           # AIHubMix（优先于 OPENAI_API_KEY，自动适配 base_url，推荐国内用户）
           AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
@@ -462,11 +463,66 @@ jobs:
           fi
 
           if [ "$MODE" != "market-only" ]; then
+            set -o pipefail
+            WORKFLOW_STEP_LOG="logs/stock_analysis_workflow_steps_$(date +%Y%m%d).log"
+            touch "$WORKFLOW_STEP_LOG"
+            echo "workflow_step_log=$WORKFLOW_STEP_LOG" | tee -a "$WORKFLOW_STEP_LOG"
             python -m src.services.ai_snapshot_audit \
               --snapshot-path reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl \
-              --output-dir reports/ai_snapshot
+              --output-dir reports/ai_snapshot 2>&1 | tee -a "$WORKFLOW_STEP_LOG"
+            python -m src.services.ai_snapshot_replay_queue \
+              --snapshot-path reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl \
+              --output-dir reports/ai_snapshot 2>&1 | tee -a "$WORKFLOW_STEP_LOG"
+            python -m src.services.ai_snapshot_price_history \
+              --snapshot-path reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl \
+              --queue-path reports/ai_snapshot/stock_ai_candidate_replay_queue_latest.jsonl \
+              --database-path data/stock_analysis.db \
+              --output-dir reports/ai_snapshot \
+              --scope database 2>&1 | tee -a "$WORKFLOW_STEP_LOG"
+            python -m src.services.ai_snapshot_gap_triage \
+              --snapshot-audit-path reports/ai_snapshot/stock_ai_candidate_snapshot_audit_latest.json \
+              --output-dir reports/ai_snapshot 2>&1 | tee -a "$WORKFLOW_STEP_LOG"
           fi
-      
+
+      - name: 审计运行日志
+        if: always()
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEYS: ${{ secrets.DEEPSEEK_API_KEYS }}
+          LLM_DEEPSEEK_API_KEY: ${{ secrets.LLM_DEEPSEEK_API_KEY }}
+          LLM_DEEPSEEK_API_KEYS: ${{ secrets.LLM_DEEPSEEK_API_KEYS }}
+          GEMINI_API_KEY: ""
+          GEMINI_API_KEYS: ""
+          GEMINI_MODEL: ""
+          GEMINI_MODEL_FALLBACK: ""
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          LONGBRIDGE_APP_KEY: ${{ secrets.LONGBRIDGE_APP_KEY }}
+          LONGBRIDGE_APP_SECRET: ${{ secrets.LONGBRIDGE_APP_SECRET }}
+          LONGBRIDGE_ACCESS_TOKEN: ${{ secrets.LONGBRIDGE_ACCESS_TOKEN }}
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+          BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
+          BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
+          SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
+          ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
+          MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
+          SEARXNG_BASE_URLS: ${{ secrets.SEARXNG_BASE_URLS }}
+        run: |
+          python -m src.services.daily_run_log_audit \
+            --log-dir logs \
+            --output-dir reports/run_audit
+          if [ -f reports/run_audit/daily_run_log_audit_latest.md ]; then
+            cat reports/run_audit/daily_run_log_audit_latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python -m src.services.ai_snapshot_step_summary \
+            --input-dir reports/ai_snapshot \
+            --output-file reports/run_audit/ai_snapshot_step_summary_latest.md
+          if [ -f reports/run_audit/ai_snapshot_step_summary_latest.md ]; then
+            cat reports/run_audit/ai_snapshot_step_summary_latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f reports/ai_snapshot/stock_ai_candidate_gap_triage_latest.md ]; then
+            cat reports/ai_snapshot/stock_ai_candidate_gap_triage_latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
         if: always()
@@ -491,7 +547,10 @@ jobs:
             echo "⚠️ 未生成报告文件"
           fi
           echo ""
-          if [ -f "logs/stock_analysis_$(date +%Y%m%d).log" ]; then
-            echo "📜 最近日志（最后 30 行）:"
-            tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
+          latest_log="$(ls -t logs/stock_analysis_*.log 2>/dev/null | head -n 1 || true)"
+          if [ -n "$latest_log" ]; then
+            echo "Latest log (${latest_log}, last 30 lines):"
+            tail -30 "$latest_log" || echo "No log content"
+          else
+            echo "Latest log: none"
           fi

@@ -9,8 +9,11 @@ data_provider/yfinance_fetcher 中美股指数获取逻辑的单元测试
 import sys
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import pandas as pd
+
+from data_provider.realtime_types import RealtimeSource
 
 # 在导入 data_provider 前 mock 可能缺失的依赖，避免环境差异导致测试无法运行
 if 'fake_useragent' not in sys.modules:
@@ -191,6 +194,36 @@ class TestGetUsMainIndices(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['code'], 'SPX')
+
+
+class TestYfinanceRealtimeQuoteSource(unittest.TestCase):
+    """Realtime quote source semantics for YFinance success paths."""
+
+    def setUp(self):
+        from data_provider.yfinance_fetcher import YfinanceFetcher
+        self.fetcher = YfinanceFetcher()
+
+    @patch('data_provider.yfinance_fetcher.get_us_index_yf_symbol')
+    def test_us_index_realtime_quote_marks_yfinance_source(self, mock_get_symbol):
+        mock_get_symbol.return_value = ('^GSPC', '标普500指数')
+        mock_ticker = MagicMock()
+        mock_ticker.fast_info = SimpleNamespace(
+            lastPrice=5100.0,
+            previousClose=5000.0,
+            open=5050.0,
+            dayHigh=5120.0,
+            dayLow=4990.0,
+            lastVolume=1200000,
+        )
+        mock_yf = MagicMock()
+        mock_yf.Ticker.return_value = mock_ticker
+
+        with patch.dict("sys.modules", {"yfinance": mock_yf}):
+            quote = self.fetcher.get_realtime_quote("SPX")
+
+        self.assertIsNotNone(quote)
+        self.assertEqual(quote.code, "SPX")
+        self.assertEqual(quote.source, RealtimeSource.YFINANCE)
 
 
 if __name__ == '__main__':

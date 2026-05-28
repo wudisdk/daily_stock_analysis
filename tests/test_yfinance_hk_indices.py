@@ -14,6 +14,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import pandas as pd
 
+from data_provider.realtime_types import RealtimeSource
+
 # 在导入 data_provider 前 mock 可能缺失的依赖，避免环境差异导致测试无法运行
 if 'fake_useragent' not in sys.modules:
     sys.modules['fake_useragent'] = MagicMock()
@@ -281,6 +283,7 @@ class TestYfinanceHKRealtimeQuote(unittest.TestCase):
         self.assertEqual(quote.change_pct, 5.0)
         self.assertEqual(quote.volume, 123456)
         self.assertEqual(quote.total_mv, 1000000000)
+        self.assertEqual(quote.source, RealtimeSource.YFINANCE)
 
     def test_get_realtime_quote_supports_hk_suffix_code(self):
         mock_ticker = MagicMock()
@@ -295,6 +298,7 @@ class TestYfinanceHKRealtimeQuote(unittest.TestCase):
         self.assertIsNotNone(quote)
         self.assertEqual(mock_yf.Ticker.call_args.args[0], "1810.HK")
         self.assertEqual(quote.code, "HK01810")
+        self.assertEqual(quote.source, RealtimeSource.YFINANCE)
 
 
 if __name__ == '__main__':

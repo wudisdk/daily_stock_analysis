@@ -111,7 +111,7 @@ def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None
     assert dimensions["price_heat"]["label"] == "overheated"
     assert dimensions["industry_theme"]["label"] == "theme_tailwind"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
-    assert dimensions["de_risk"]["label"] == "flow_broke_price_hot"
+    assert dimensions["de_risk"]["label"] == "flow_broke_price_flow_hot"
     assert dimensions["data_coverage"]["label"] == "high"
     assert rows[0]["data_coverage"]["factor_snapshot"]["status"] == "available"
     assert rows[0]["data_coverage"]["news"]["status"] == "available"

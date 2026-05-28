@@ -1,0 +1,384 @@
+name: AI Replay Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Daily-analysis run id that uploaded analysis-reports-*"
+        required: true
+        type: string
+      analysis_artifact_name:
+        description: "Optional analysis artifact name; auto-detects analysis-reports-* when empty"
+        required: false
+        default: ""
+        type: string
+      baseline_run_id:
+        description: "Optional earlier daily-analysis run id for candidate retention/turnover comparison"
+        required: false
+        default: ""
+        type: string
+      baseline_artifact_name:
+        description: "Optional baseline artifact name; auto-detects analysis-reports-* for baseline_run_id"
+        required: false
+        default: ""
+        type: string
+      price_source_run_id:
+        description: "Optional later daily-analysis run id that uploaded price history"
+        required: false
+        default: ""
+        type: string
+      price_artifact_name:
+        description: "Optional price artifact name; auto-detects analysis-reports-* for price_source_run_id"
+        required: false
+        default: ""
+        type: string
+      price_file:
+        description: "Price file path/name inside price artifact; columns: stock_code, trade_date, close"
+        required: false
+        default: "reports/ai_snapshot/stock_ai_candidate_price_history_latest.csv"
+        type: string
+
+concurrency:
+  group: ai-replay-validation-${{ github.ref }}-${{ inputs.source_run_id }}
+  cancel-in-progress: true
+
+jobs:
+  replay-validation:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download analysis artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          ANALYSIS_ARTIFACT_NAME: ${{ inputs.analysis_artifact_name }}
+        run: |
+          set -euo pipefail
+          artifact_name="$ANALYSIS_ARTIFACT_NAME"
+          if [ -z "$artifact_name" ]; then
+            artifact_name="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" \
+                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
+                | head -n 1
+            )"
+          fi
+          if [ -z "$artifact_name" ]; then
+            echo "No non-expired analysis-reports-* artifact found for run ${SOURCE_RUN_ID}" >&2
+            exit 1
+          fi
+          echo "analysis_artifact_name=${artifact_name}" >> "$GITHUB_ENV"
+          gh run download "$SOURCE_RUN_ID" -n "$artifact_name" --dir downloaded-analysis
+
+      - name: Download baseline artifact
+        if: ${{ inputs.baseline_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
+          BASELINE_ARTIFACT_NAME: ${{ inputs.baseline_artifact_name }}
+        run: |
+          set -euo pipefail
+          artifact_name="$BASELINE_ARTIFACT_NAME"
+          if [ -z "$artifact_name" ]; then
+            artifact_name="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts" \
+                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
+                | head -n 1
+            )"
+          fi
+          if [ -z "$artifact_name" ]; then
+            echo "No non-expired baseline analysis-reports-* artifact found for run ${BASELINE_RUN_ID}" >&2
+            exit 1
+          fi
+          echo "baseline_run_id=${BASELINE_RUN_ID}" >> "$GITHUB_ENV"
+          echo "baseline_artifact_name=${artifact_name}" >> "$GITHUB_ENV"
+          gh run download "$BASELINE_RUN_ID" -n "$artifact_name" --dir downloaded-baseline
+
+      - name: Validate snapshot and replay queue
+        run: |
+          set -euo pipefail
+          snapshot_path="downloaded-analysis/reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl"
+          if [ ! -f "$snapshot_path" ]; then
+            echo "Missing snapshot: $snapshot_path" >&2
+            find downloaded-analysis -maxdepth 4 -type f | sort
+            exit 1
+          fi
+          mkdir -p replay-validation
+          python -m src.services.ai_snapshot_audit \
+            --snapshot-path "$snapshot_path" \
+            --output-dir replay-validation
+          python -m src.services.ai_snapshot_replay_queue \
+            --snapshot-path "$snapshot_path" \
+            --output-dir replay-validation
+          if [ -d downloaded-baseline ]; then
+            baseline_snapshot_path="$(
+              find downloaded-baseline -type f | while IFS= read -r file; do
+                case "$file" in
+                  */reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl|*/stock_ai_candidate_snapshot_latest.jsonl)
+                    echo "$file"
+                    break
+                    ;;
+                esac
+              done
+            )"
+            if [ -z "$baseline_snapshot_path" ]; then
+              echo "Missing baseline snapshot in downloaded-baseline" >&2
+              find downloaded-baseline -maxdepth 4 -type f | sort
+              exit 1
+            fi
+            python -m src.services.ai_snapshot_turnover \
+              --base-snapshot-path "$baseline_snapshot_path" \
+              --compare-snapshot-path "$snapshot_path" \
+              --output-dir replay-validation
+          fi
+
+      - name: Resolve replay outcomes
+        if: ${{ inputs.price_artifact_name != '' || inputs.price_source_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          PRICE_SOURCE_RUN_ID: ${{ inputs.price_source_run_id }}
+          PRICE_ARTIFACT_NAME: ${{ inputs.price_artifact_name }}
+          PRICE_FILE: ${{ inputs.price_file }}
+        run: |
+          set -euo pipefail
+          price_run_id="${PRICE_SOURCE_RUN_ID:-$SOURCE_RUN_ID}"
+          price_artifact_name="$PRICE_ARTIFACT_NAME"
+          if [ -z "$price_artifact_name" ]; then
+            price_artifact_name="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${price_run_id}/artifacts" \
+                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
+                | head -n 1
+            )"
+          fi
+          if [ -z "$price_artifact_name" ]; then
+            echo "No non-expired analysis-reports-* price artifact found for run ${price_run_id}" >&2
+            exit 1
+          fi
+          echo "price_source_run_id=${price_run_id}" >> "$GITHUB_ENV"
+          echo "price_artifact_name=${price_artifact_name}" >> "$GITHUB_ENV"
+          gh run download "$price_run_id" -n "$price_artifact_name" --dir price-input
+          price_file="${PRICE_FILE:-reports/ai_snapshot/stock_ai_candidate_price_history_latest.csv}"
+          price_path="$(
+            find price-input -type f | while IFS= read -r file; do
+              case "$file" in
+                */"$price_file"|*/"$(basename "$price_file")")
+                  echo "$file"
+                  break
+                  ;;
+              esac
+            done
+          )"
+          if [ -z "$price_path" ]; then
+            echo "Missing price file ${price_file} in artifact ${price_artifact_name}" >&2
+            find price-input -type f | sort
+            exit 1
+          fi
+          price_audit_path="$(
+            find price-input -type f | while IFS= read -r file; do
+              case "$file" in
+                */reports/ai_snapshot/stock_ai_candidate_price_history_audit_latest.json|*/stock_ai_candidate_price_history_audit_latest.json)
+                  echo "$file"
+                  break
+                  ;;
+              esac
+            done
+          )"
+          if [ -n "$price_audit_path" ]; then
+            cp "$price_audit_path" replay-validation/stock_ai_candidate_price_history_audit_latest.json
+          else
+            echo "No price-history audit file found in artifact ${price_artifact_name}" >&2
+          fi
+          python -m src.services.ai_snapshot_replay_outcome \
+            --queue-path replay-validation/stock_ai_candidate_replay_queue_latest.jsonl \
+            --price-path "$price_path" \
+            --output-dir replay-validation
+
+      - name: Summarize replay validation
+        if: always()
+        run: |
+          {
+            echo "## AI Replay Validation"
+            echo ""
+            echo "- source_run_id: \`${{ inputs.source_run_id }}\`"
+            echo "- analysis_artifact_name: \`${analysis_artifact_name:-${{ inputs.analysis_artifact_name }}}\`"
+            echo "- baseline_run_id: \`${baseline_run_id:-${{ inputs.baseline_run_id }}}\`"
+            echo "- baseline_artifact_name: \`${baseline_artifact_name:-${{ inputs.baseline_artifact_name }}}\`"
+            echo "- price_source_run_id: \`${price_source_run_id:-${{ inputs.price_source_run_id }}}\`"
+            echo "- price_artifact_name: \`${price_artifact_name:-${{ inputs.price_artifact_name }}}\`"
+            echo ""
+            echo "### Files"
+            find replay-validation -maxdepth 1 -type f -printf "- %f\n" 2>/dev/null | sort || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          def load_rows(name):
+              path = root / name
+              if not path.exists():
+                  return None
+              try:
+                  rows = json.loads(path.read_text(encoding="utf-8-sig"))
+              except Exception as exc:
+                  print(f"- Could not parse `{name}`: {exc}")
+                  return []
+              return rows if isinstance(rows, list) else []
+
+          def clean(value):
+              return str(value if value is not None else "").replace("|", "/")
+
+          def pct(value):
+              if value is None or value == "":
+                  return ""
+              try:
+                  return f"{float(value):.2%}"
+              except (TypeError, ValueError):
+                  return clean(value)
+
+          audits = (
+              ("Snapshot audit", "stock_ai_candidate_snapshot_audit_latest.json"),
+              ("Replay queue audit", "stock_ai_candidate_replay_queue_audit_latest.json"),
+              ("Candidate turnover audit", "stock_ai_candidate_turnover_audit_latest.json"),
+              ("Price history audit", "stock_ai_candidate_price_history_audit_latest.json"),
+              ("Replay outcome audit", "stock_ai_candidate_replay_outcome_audit_latest.json"),
+          )
+          root = Path("replay-validation")
+          print("")
+          print("### Audit Status")
+          print("")
+          print("| Audit | Status | Rows | Checks |")
+          print("| --- | --- | ---: | --- |")
+          for label, name in audits:
+              path = root / name
+              if not path.exists():
+                  print(f"| {label} | SKIPPED | 0 | missing `{name}` |")
+                  continue
+              try:
+                  audit = json.loads(path.read_text(encoding="utf-8-sig"))
+              except Exception as exc:
+                  print(f"| {label} | FAIL | 0 | parse error: {exc} |")
+                  continue
+              status = audit.get("overall_status") or "UNKNOWN"
+              row_count = audit.get("row_count", audit.get("candidate_count", ""))
+              status_counts = audit.get("status_counts") or {}
+              checks = ", ".join(f"{key}:{value}" for key, value in sorted(status_counts.items()))
+              print(f"| {label} | {status} | {row_count} | {checks or 'none'} |")
+
+          turnover_rows = load_rows("stock_ai_candidate_turnover_latest.json")
+          print("")
+          print("### Candidate Turnover")
+          print("")
+          if turnover_rows is None:
+              print("- SKIPPED: provide `baseline_run_id` to compare candidate retention/turnover.")
+          elif not turnover_rows:
+              print("- No candidate turnover rows yet.")
+          else:
+              order = {"top_5": 0, "top_10": 1, "top_20": 2, "top_50": 3, "all": 9}
+              rows = sorted(turnover_rows, key=lambda row: order.get(row.get("bucket"), 8))
+              print("| Bucket | Base | Compare | Retained | Added | Removed | Retention | Turnover |")
+              print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+              for row in rows[:8]:
+                  print(
+                      "| "
+                      f"{clean(row.get('bucket'))} | "
+                      f"{row.get('base_candidate_count', '')} | "
+                      f"{row.get('compare_candidate_count', '')} | "
+                      f"{row.get('retained_count', '')} | "
+                      f"{row.get('added_count', '')} | "
+                      f"{row.get('removed_count', '')} | "
+                      f"{pct(row.get('retention_rate'))} | "
+                      f"{pct(row.get('candidate_turnover_rate'))} |"
+                  )
+
+          guard_rows = load_rows("stock_ai_candidate_replay_guard_policy_latest.json")
+          print("")
+          print("### Guard Policy Candidates")
+          print("")
+          if guard_rows is None:
+              print("- SKIPPED: missing `stock_ai_candidate_replay_guard_policy_latest.json`")
+          elif not guard_rows:
+              print("- No guard policy candidates yet.")
+          else:
+              priority = {
+                  "exit_deweight_candidate": 0,
+                  "watchlist_directional_candidate": 1,
+                  "insufficient_sample_direction_only": 2,
+                  "no_deweight_signal": 3,
+              }
+              guard_rows = sorted(
+                  guard_rows,
+                  key=lambda row: (
+                      priority.get(row.get("policy_signal"), 9),
+                      0 if row.get("invalidation_flag") == "flow_broke_proxy" else 1,
+                      row.get("eval_horizon") or "",
+                  ),
+              )
+              print("| Horizon | Flag | Signal | Hit/Miss | Delta Excess | Net Edge | Cost Buffer | Action |")
+              print("| --- | --- | --- | ---: | ---: | ---: | --- | --- |")
+              for row in guard_rows[:10]:
+                  hit_miss = f"{row.get('hit_available_count', 0)}/{row.get('miss_available_count', 0)}"
+                  print(
+                      "| "
+                      f"{clean(row.get('eval_horizon'))} | "
+                      f"{clean(row.get('invalidation_flag'))} | "
+                      f"{clean(row.get('policy_signal'))} | "
+                      f"{hit_miss} | "
+                      f"{pct(row.get('delta_avg_excess_return'))} | "
+                      f"{pct(row.get('net_deweight_edge_after_cost'))} | "
+                      f"{clean(row.get('cost_buffer_status'))} | "
+                      f"{clean(row.get('recommended_action'))} |"
+                  )
+
+          case_rows = load_rows("stock_ai_candidate_replay_case_tag_summary_latest.json")
+          print("")
+          print("### Case Tag Outcomes")
+          print("")
+          if case_rows is None:
+              print("- SKIPPED: missing `stock_ai_candidate_replay_case_tag_summary_latest.json`")
+          elif not case_rows:
+              print("- No case tag outcome rows yet.")
+          else:
+              available_rows = [row for row in case_rows if row.get("outcome_status") == "available"]
+              rows = available_rows or case_rows
+              rows = sorted(
+                  rows,
+                  key=lambda row: (
+                      row.get("eval_horizon") or "",
+                      -(row.get("available_count") or 0),
+                      row.get("case_tag_group") or "",
+                      row.get("case_tag") or "",
+                  ),
+              )
+              print("| Horizon | Group | Tag | Rows | Available | Avg Excess | Win Rate |")
+              print("| --- | --- | --- | ---: | ---: | ---: | ---: |")
+              for row in rows[:12]:
+                  print(
+                      "| "
+                      f"{clean(row.get('eval_horizon'))} | "
+                      f"{clean(row.get('case_tag_group'))} | "
+                      f"{clean(row.get('case_tag'))} | "
+                      f"{row.get('n_rows', '')} | "
+                      f"{row.get('available_count', '')} | "
+                      f"{pct(row.get('avg_excess_return'))} | "
+                      f"{pct(row.get('win_rate'))} |"
+                  )
+          PY
+
+      - name: Upload replay validation artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ai-replay-validation-${{ github.run_number }}
+          path: replay-validation/
+          if-no-files-found: ignore
+          retention-days: 30

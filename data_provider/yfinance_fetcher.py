@@ -226,10 +226,20 @@ class YfinanceFetcher(BaseFetcher):
 
         # 重置索引，将日期从索引变为列
         df = df.reset_index()
+        if 'Date' not in df.columns and 'date' not in df.columns:
+            for candidate in ('Datetime', 'index', 'level_0'):
+                if candidate in df.columns:
+                    df = df.rename(columns={candidate: 'Date'})
+                    break
+            else:
+                first_col = df.columns[0] if len(df.columns) else None
+                if first_col is not None and pd.api.types.is_datetime64_any_dtype(df[first_col]):
+                    df = df.rename(columns={first_col: 'Date'})
 
         # 列名映射（yfinance 使用首字母大写）
         column_mapping = {
             'Date': 'date',
+            'Datetime': 'date',
             'Open': 'open',
             'High': 'high',
             'Low': 'low',

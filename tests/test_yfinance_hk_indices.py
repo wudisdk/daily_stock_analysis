@@ -201,5 +201,48 @@ class TestGetMainIndicesDispatch(unittest.TestCase):
                 self.assertEqual(result, [{'code': 'HSI'}])
 
 
+class TestYfinanceNormalizeData(unittest.TestCase):
+    """Historical daily fallback normalization tests."""
+
+    def setUp(self):
+        from data_provider.yfinance_fetcher import YfinanceFetcher
+
+        self.fetcher = YfinanceFetcher()
+
+    def test_normalize_data_uses_unnamed_datetime_index_as_date(self):
+        raw = pd.DataFrame(
+            {
+                "Open": [1.0, 1.1],
+                "High": [1.2, 1.3],
+                "Low": [0.9, 1.0],
+                "Close": [1.1, 1.2],
+                "Volume": [1000, 1200],
+            },
+            index=pd.DatetimeIndex(["2026-05-27", "2026-05-28"]),
+        )
+
+        result = self.fetcher._normalize_data(raw, "HK01347")
+
+        self.assertIn("date", result.columns)
+        self.assertEqual(str(result.loc[0, "date"].date()), "2026-05-27")
+        self.assertEqual(result.loc[0, "code"], "HK01347")
+
+    def test_normalize_data_flattens_yfinance_multiindex_with_unnamed_index(self):
+        raw = pd.DataFrame(
+            [[1.0, 1.2, 0.9, 1.1, 1000], [1.1, 1.3, 1.0, 1.2, 1200]],
+            index=pd.DatetimeIndex(["2026-05-27", "2026-05-28"]),
+            columns=pd.MultiIndex.from_product(
+                [["Open", "High", "Low", "Close", "Volume"],
+                 ["1347.HK"]]
+            ),
+        )
+
+        result = self.fetcher._normalize_data(raw, "HK01347")
+
+        self.assertIn("date", result.columns)
+        self.assertIn("close", result.columns)
+        self.assertEqual(list(result["volume"]), [1000, 1200])
+
+
 if __name__ == '__main__':
     unittest.main()

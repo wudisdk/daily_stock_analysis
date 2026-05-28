@@ -20,6 +20,8 @@ not turn future returns into routine scoring inputs.
     Tushare token is available.
   - Hong Kong realtime quote routing now tries YFinance before the slower
     AkShare full-market backup, while still using AkShare as a final fallback.
+  - Hong Kong daily routing keeps Tushare first, then uses YFinance before
+    AkShare to avoid repeated AkShare remote disconnect delays.
 - `src/services/analysis_context_builder.py`
   - The `fundamentals` block now derives low-sensitivity capital-flow guard
     warnings from already fetched context. This is a hosted-workflow proxy for

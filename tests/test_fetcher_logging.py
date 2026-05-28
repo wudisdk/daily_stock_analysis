@@ -106,11 +106,11 @@ class TestFetcherLogging(unittest.TestCase):
         df, source = manager.get_daily_data("1211.HK", start_date="2026-05-01", end_date="2026-05-08")
 
         self.assertFalse(df.empty)
-        self.assertEqual(source, "AkshareFetcher")
+        self.assertEqual(source, "YfinanceFetcher")
         self.assertEqual(efinance.calls, [])
         self.assertEqual(pytdx.calls, [])
-        self.assertEqual(akshare.calls, ["HK01211"])
-        self.assertEqual(yfinance.calls, [])
+        self.assertEqual(akshare.calls, [])
+        self.assertEqual(yfinance.calls, ["HK01211"])
 
     @patch("data_provider.efinance_fetcher.get_config")
     def test_efinance_rejects_hk_daily_without_calling_eastmoney(self, mock_get_config):

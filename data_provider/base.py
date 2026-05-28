@@ -740,6 +740,25 @@ class DataFetcherManager:
 
         return kept
 
+    def _order_hk_daily_fetchers(self, fetchers: List[BaseFetcher]) -> List[BaseFetcher]:
+        """Prefer fast, reliable HK daily fallbacks before slower AkShare calls."""
+        if not fetchers:
+            return fetchers
+
+        preferred_order = (
+            ["LongbridgeFetcher", "TushareFetcher", "YfinanceFetcher", "AkshareFetcher"]
+            if self._longbridge_preferred(capability="daily_data")
+            else ["TushareFetcher", "YfinanceFetcher", "AkshareFetcher", "LongbridgeFetcher"]
+        )
+        order = {name: index for index, name in enumerate(preferred_order)}
+        ordered = sorted(fetchers, key=lambda f: (order.get(f.name, len(order)), f.priority))
+
+        before = [f.name for f in fetchers]
+        after = [f.name for f in ordered]
+        if before != after:
+            logger.info("[daily_data] HK route order: %s", " -> ".join(after))
+        return ordered
+
     def _get_cached_stock_name(self, stock_code: str) -> Optional[str]:
         self._ensure_concurrency_guards()
         with self._stock_name_cache_lock:
@@ -1173,6 +1192,8 @@ class DataFetcherManager:
         if is_hk:
             fetchers = self._filter_daily_fetchers_for_market(fetchers, "hk")
         fetchers = self._filter_fetchers_by_capability(fetchers, capability="daily_data")
+        if is_hk:
+            fetchers = self._order_hk_daily_fetchers(fetchers)
         total_fetchers = len(fetchers)
 
         if total_fetchers == 0:

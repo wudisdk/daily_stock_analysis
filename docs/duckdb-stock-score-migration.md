@@ -36,6 +36,13 @@ not turn future returns into routine scoring inputs.
     quality/growth coverage, fund-flow guard status, risk flag status, and
     confidence. The prompt renderer only exposes whitelisted labels and
     statuses, not raw factor payloads or future-return labels.
+- `src/services/ai_candidate_snapshot.py`
+  - Hosted runs now export a DuckDB-style fixed JSONL snapshot under
+    `reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl` plus a
+    trade-date copy. The export is intentionally low-sensitivity: it keeps
+    ranked model outputs, factor labels/statuses, source coverage, warning
+    codes, and news counts, while excluding news bodies, raw capital-flow
+    amounts, risk text, secrets, and any future-return labels.
 - `.github/workflows/00-daily-analysis.yml`
   - The hosted daily workflow defaults to DeepSeek LiteLLM models and a
     Tushare-first realtime source order.
@@ -50,7 +57,7 @@ not turn future returns into routine scoring inputs.
 | `stock_daily_basic_raw` from Tushare `daily_basic` | `TushareFetcher.get_daily_basic_snapshot()` | Fill valuation/liquidity fields for prompts and reports. |
 | `stock_fina_indicator_raw` from Tushare `fina_indicator` | `TushareFetcher.get_fina_indicator_snapshot()` | Add point-in-time financial quality fields after prompt/report wiring. |
 | `research_stock_score_daily` | Future deterministic factor snapshot | Keep scores interpretable and as-of dated. |
-| `research_stock_ai_candidate_snapshot_latest` | Future optional JSONL artifact or GitHub Actions artifact | Give AI a fixed input snapshot instead of live mutable facts. |
+| `research_stock_ai_candidate_snapshot_latest` | `reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl` | Give review/validation a fixed input snapshot instead of mutable live context. |
 | `research_stock_ai_memo_outcome*` | AnalysisContextPack guard warnings and future validation artifact | Convert proven invalidation labels into prompt guardrails first, then compare model labels with future returns outside routine scoring. |
 
 ## Migration Guardrails
@@ -67,8 +74,8 @@ not turn future returns into routine scoring inputs.
 
 1. Expand `factor_snapshot` with additional as-of fields when they are already
    fetched safely: industry/theme, institution ownership, and de-risk flags.
-2. Add a small candidate snapshot export path for GitHub Actions artifacts, then
-   let DeepSeek read that fixed snapshot instead of re-querying mutable context.
+2. Let DeepSeek optionally read the fixed candidate snapshot in later stages
+   instead of re-querying mutable context.
 3. Extend the current `flow_broke` prompt guard into a deterministic
    `factor_snapshot` de-risk flag after sample-out, turnover, cost, and
    drawdown checks.

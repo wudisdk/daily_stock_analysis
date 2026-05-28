@@ -51,6 +51,7 @@ from src.services.analysis_context_builder import (
     AnalysisContextBuilder,
     PipelineAnalysisArtifacts,
 )
+from src.services.ai_candidate_snapshot import write_ai_candidate_snapshot_files
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     current_diagnostic_snapshot,
@@ -2254,6 +2255,7 @@ class StockAnalysisPipeline:
         # 保存报告到本地文件（无论是否推送通知都保存）
         if results and not dry_run:
             self._save_local_report(results, report_type)
+            self._save_ai_candidate_snapshot(results)
 
         # 发送通知（单股推送模式下跳过汇总推送，避免重复）
         if results and send_notification and not dry_run:
@@ -2269,6 +2271,21 @@ class StockAnalysisPipeline:
                 self._send_notifications(results, report_type)
         
         return results
+
+    def _save_ai_candidate_snapshot(self, results: List[AnalysisResult]) -> None:
+        """Write low-sensitivity AI candidate snapshots into report artifacts."""
+        try:
+            paths = write_ai_candidate_snapshot_files(
+                results,
+                run_id=getattr(self, "query_id", None),
+            )
+            if paths:
+                logger.info(
+                    "AI candidate snapshot exported: %s",
+                    ", ".join(str(path) for path in paths),
+                )
+        except Exception as exc:
+            logger.warning("AI candidate snapshot export failed (fail-open): %s", exc)
 
     def _send_single_stock_notification(
         self,

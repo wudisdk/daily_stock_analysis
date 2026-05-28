@@ -87,6 +87,12 @@ def _result(code: str = "600519", score: int = 72) -> SimpleNamespace:
     )
 
 
+def _assert_sha256_hex(value: str) -> None:
+    assert isinstance(value, str)
+    assert len(value) == 64
+    int(value, 16)
+
+
 def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None:
     rows = build_ai_candidate_snapshot_rows(
         [_result("000001", 62), _result("600519", 82), None],
@@ -119,6 +125,47 @@ def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None
     assert "raw risk text" not in dumped
     assert "should-redact" not in dumped
     assert "半导体" not in dumped
+
+
+def test_snapshot_hash_is_stable_across_run_metadata() -> None:
+    first = _result("600519", 72)
+    second = _result("600519", 72)
+    second.query_id = "q-changed"
+
+    rows_a = build_ai_candidate_snapshot_rows(
+        [first],
+        created_at=datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+        run_id="run-1",
+    )
+    rows_b = build_ai_candidate_snapshot_rows(
+        [second],
+        created_at=datetime(2026, 5, 28, 13, 0, tzinfo=timezone.utc),
+        run_id="run-2",
+    )
+
+    hash_a = rows_a[0]["input_snapshot_hash"]
+    hash_b = rows_b[0]["input_snapshot_hash"]
+    _assert_sha256_hex(hash_a)
+    _assert_sha256_hex(hash_b)
+    assert rows_a[0]["created_at"] != rows_b[0]["created_at"]
+    assert rows_a[0]["run_id"] != rows_b[0]["run_id"]
+    assert rows_a[0]["query_id"] != rows_b[0]["query_id"]
+    assert hash_a == hash_b
+
+
+def test_snapshot_hash_changes_when_stable_payload_changes() -> None:
+    base = build_ai_candidate_snapshot_rows(
+        [_result("600519", 72)],
+        created_at=datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+        run_id="run-1",
+    )[0]
+    changed = build_ai_candidate_snapshot_rows(
+        [_result("600519", 73)],
+        created_at=datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+        run_id="run-1",
+    )[0]
+
+    assert base["input_snapshot_hash"] != changed["input_snapshot_hash"]
 
 
 def test_build_snapshot_rows_uses_code_order_for_equal_scores_and_top_level_fallbacks() -> None:
@@ -183,8 +230,9 @@ def test_write_snapshot_files_writes_latest_and_trade_date_jsonl(tmp_path) -> No
     }
     latest = tmp_path / "stock_ai_candidate_snapshot_latest.jsonl"
     row = json.loads(latest.read_text(encoding="utf-8").strip())
-    assert row["schema_version"] == "1.0"
+    assert row["schema_version"] == "1.1"
     assert row["snapshot_kind"] == "post_analysis_candidate"
+    _assert_sha256_hex(row["input_snapshot_hash"])
 
 
 def test_snapshot_export_skips_failed_or_empty_results() -> None:

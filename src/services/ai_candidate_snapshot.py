@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
@@ -16,9 +17,17 @@ from src.services.analysis_context_builder import (
 from src.utils.sanitize import redact_sensitive_mapping
 
 
-SNAPSHOT_SCHEMA_VERSION = "1.0"
+SNAPSHOT_SCHEMA_VERSION = "1.1"
 SNAPSHOT_KIND = "post_analysis_candidate"
 DEFAULT_SNAPSHOT_DIR = Path("reports") / "ai_snapshot"
+INPUT_SNAPSHOT_HASH_EXCLUDED_FIELDS = {
+    "schema_version",
+    "snapshot_kind",
+    "created_at",
+    "run_id",
+    "query_id",
+    "input_snapshot_hash",
+}
 
 
 def build_ai_candidate_snapshot_rows(
@@ -41,17 +50,37 @@ def build_ai_candidate_snapshot_rows(
 
     rows: List[Dict[str, Any]] = []
     for rank, result in enumerate(ordered_results, start=1):
-        rows.append(
-            redact_sensitive_mapping(
-                _build_snapshot_row(
-                    result,
-                    rank=rank,
-                    created_at=timestamp,
-                    run_id=run_id,
-                )
-            )
+        row = _build_snapshot_row(
+            result,
+            rank=rank,
+            created_at=timestamp,
+            run_id=run_id,
         )
+        safe_row = redact_sensitive_mapping(row)
+        rows.append(_with_input_snapshot_hash(safe_row))
     return rows
+
+
+def _with_input_snapshot_hash(row: Mapping[str, Any]) -> Dict[str, Any]:
+    """Attach a deterministic hash of the stable, redacted snapshot payload."""
+    stable_payload = {
+        key: value
+        for key, value in row.items()
+        if key not in INPUT_SNAPSHOT_HASH_EXCLUDED_FIELDS
+    }
+    hashed_row = dict(row)
+    hashed_row["input_snapshot_hash"] = _snapshot_hash(stable_payload)
+    return hashed_row
+
+
+def _snapshot_hash(payload: Mapping[str, Any]) -> str:
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def write_ai_candidate_snapshot_files(

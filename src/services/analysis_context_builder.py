@@ -20,6 +20,9 @@ from src.schemas.analysis_context_pack import (
 _REALTIME_OVERLAY_WARNING = "intraday_realtime_overlay"
 _REALTIME_FALLBACK_WARNING = "realtime_provider_fallback"
 _FUNDAMENTAL_FAILED_REASON = "fundamental_pipeline_failed"
+_CAPITAL_FLOW_BROKE_PROXY_WARNING = "capital_flow_broke_proxy"
+_CAPITAL_FLOW_CONFLICT_WARNING = "capital_flow_conflicting_signals"
+_PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING = "price_flow_hot_without_confirmed_inflow"
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,7 @@ class AnalysisContextBuilder:
         data_quality_warnings.extend(technical_warnings)
         blocks["chip"] = _build_chip_block(artifacts)
         blocks["fundamentals"] = _build_fundamentals_block(artifacts)
+        data_quality_warnings.extend(blocks["fundamentals"].warnings)
         blocks["news"] = _build_news_block(artifacts)
 
         return AnalysisContextPack(
@@ -321,39 +325,114 @@ def _build_fundamentals_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisC
     }
     metadata = {key: value for key, value in metadata.items() if value not in (None, {}, [])}
 
+    guard_warnings = _fundamental_guard_warnings(context, artifacts)
+    if guard_warnings:
+        metadata["guard_warnings"] = guard_warnings
+
+    items = {
+        "status": AnalysisContextItem(
+            status=status,
+            value=raw_status or None,
+            source=source,
+            missing_reason=missing_reason,
+        ),
+        "coverage": AnalysisContextItem(
+            status=_fundamental_payload_status(status, bool(coverage)),
+            value=coverage or None,
+            source=source,
+            missing_reason=_fundamental_payload_missing_reason(
+                raw_status,
+                bool(coverage),
+                "fundamental_coverage_missing",
+            ),
+        ),
+        "source_chain": AnalysisContextItem(
+            status=_fundamental_payload_status(status, bool(source_chain)),
+            value=source_chain or None,
+            source=source,
+            missing_reason=_fundamental_payload_missing_reason(
+                raw_status,
+                bool(source_chain),
+                "fundamental_source_chain_missing",
+            ),
+        ),
+    }
+    if guard_warnings:
+        items["capital_flow_guard"] = AnalysisContextItem(
+            status=ContextFieldStatus.AVAILABLE,
+            value={"warnings": guard_warnings},
+            source=source,
+        )
+
     return AnalysisContextBlock(
         status=status,
-        items={
-            "status": AnalysisContextItem(
-                status=status,
-                value=raw_status or None,
-                source=source,
-                missing_reason=missing_reason,
-            ),
-            "coverage": AnalysisContextItem(
-                status=_fundamental_payload_status(status, bool(coverage)),
-                value=coverage or None,
-                source=source,
-                missing_reason=_fundamental_payload_missing_reason(
-                    raw_status,
-                    bool(coverage),
-                    "fundamental_coverage_missing",
-                ),
-            ),
-            "source_chain": AnalysisContextItem(
-                status=_fundamental_payload_status(status, bool(source_chain)),
-                value=source_chain or None,
-                source=source,
-                missing_reason=_fundamental_payload_missing_reason(
-                    raw_status,
-                    bool(source_chain),
-                    "fundamental_source_chain_missing",
-                ),
-            ),
-        },
+        items=items,
         source=source,
+        warnings=guard_warnings,
         metadata=metadata,
     )
+
+
+def _fundamental_guard_warnings(
+    context: Mapping[str, Any],
+    artifacts: PipelineAnalysisArtifacts,
+) -> List[str]:
+    """Derive low-sensitivity prompt guardrails from already-fetched inputs."""
+    warnings: List[str] = []
+    stock_flow = _capital_flow_stock_flow(context)
+    flow_values = [
+        _numeric_value(stock_flow.get("main_net_inflow")),
+        _numeric_value(stock_flow.get("inflow_5d")),
+        _numeric_value(stock_flow.get("inflow_10d")),
+    ]
+    present_flows = [value for value in flow_values if value is not None]
+
+    if len(present_flows) >= 2 and all(value < 0 for value in present_flows):
+        warnings.append(_CAPITAL_FLOW_BROKE_PROXY_WARNING)
+    elif any(value < 0 for value in present_flows) and any(value > 0 for value in present_flows):
+        warnings.append(_CAPITAL_FLOW_CONFLICT_WARNING)
+
+    quote = _to_dict(artifacts.realtime_quote)
+    change_60d = _numeric_value(quote.get("change_60d"))
+    volume_ratio = _numeric_value(quote.get("volume_ratio"))
+    has_confirmed_inflow = any(value is not None and value > 0 for value in present_flows)
+    if (
+        change_60d is not None
+        and change_60d >= 25
+        and volume_ratio is not None
+        and volume_ratio >= 2.0
+        and not has_confirmed_inflow
+    ):
+        warnings.append(_PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING)
+
+    return warnings
+
+
+def _capital_flow_stock_flow(context: Mapping[str, Any]) -> Dict[str, Any]:
+    block = context.get("capital_flow")
+    if not isinstance(block, Mapping):
+        return {}
+    data = block.get("data") if isinstance(block.get("data"), Mapping) else block
+    stock_flow = data.get("stock_flow") if isinstance(data, Mapping) else None
+    return dict(stock_flow) if isinstance(stock_flow, Mapping) else {}
+
+
+def _numeric_value(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip().replace(",", "")
+        if not text:
+            return None
+        if text.endswith("%"):
+            text = text[:-1].strip()
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
 
 
 def _build_news_block(artifacts: PipelineAnalysisArtifacts) -> AnalysisContextBlock:

@@ -281,6 +281,75 @@ def test_fundamentals_maps_supported_statuses_without_raw_errors(
         )
 
 
+def test_fundamentals_derives_capital_flow_guard_warnings() -> None:
+    pack = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1880.0,
+                "change_60d": 31.2,
+                "volume_ratio": 2.4,
+            },
+            fundamental_context={
+                "status": "ok",
+                "coverage": {"valuation": "ok", "capital_flow": "ok"},
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": -1_000_000.0,
+                            "inflow_5d": -2_000_000.0,
+                            "inflow_10d": None,
+                        }
+                    },
+                },
+            },
+        )
+    )
+
+    block = pack.blocks["fundamentals"]
+
+    assert "capital_flow_broke_proxy" in block.warnings
+    assert "price_flow_hot_without_confirmed_inflow" in block.warnings
+    assert block.metadata["guard_warnings"] == block.warnings
+    assert block.items["capital_flow_guard"].value == {"warnings": block.warnings}
+    assert "capital_flow_broke_proxy" in pack.data_quality.warnings
+
+
+def test_fundamentals_marks_conflicting_capital_flow_without_hot_price_guard() -> None:
+    pack = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1880.0,
+                "change_60d": 31.2,
+                "volume_ratio": 2.4,
+            },
+            fundamental_context={
+                "status": "ok",
+                "coverage": {"valuation": "ok", "capital_flow": "ok"},
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": -1_000_000.0,
+                            "inflow_5d": 2_000_000.0,
+                            "inflow_10d": None,
+                        }
+                    },
+                },
+            },
+        )
+    )
+
+    block = pack.blocks["fundamentals"]
+
+    assert block.warnings == ["capital_flow_conflicting_signals"]
+    assert "price_flow_hot_without_confirmed_inflow" not in block.warnings
+
+
 def test_builder_does_not_hide_broken_artifact_to_dict() -> None:
     with pytest.raises(RuntimeError, match="broken trend artifact"):
         AnalysisContextBuilder.build(_artifacts(trend_result=_BrokenTrend()))

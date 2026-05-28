@@ -70,6 +70,36 @@ def _pack() -> AnalysisContextPack:
                     )
                 },
             ),
+            "factor_snapshot": AnalysisContextBlock(
+                status=ContextFieldStatus.PARTIAL,
+                source="analysis_context_builder.factor_snapshot",
+                warnings=["factor_snapshot_price_overheated"],
+                metadata={
+                    "dimensions": [
+                        {
+                            "name": "technical_score",
+                            "status": "available",
+                            "label": "constructive",
+                        },
+                        {
+                            "name": "price_heat",
+                            "status": "available",
+                            "label": "overheated",
+                        },
+                        {
+                            "name": "valuation",
+                            "status": "missing",
+                            "label": "secret-token",
+                        },
+                    ]
+                },
+                items={
+                    "technical_score": AnalysisContextItem(
+                        status=ContextFieldStatus.AVAILABLE,
+                        value={"raw_score": 72},
+                    )
+                },
+            ),
         },
         data_quality=DataQuality(warnings=["intraday_realtime_overlay"]),
         metadata={
@@ -97,6 +127,8 @@ def test_chinese_summary_renders_low_sensitivity_pack_statuses() -> None:
     assert "技术: partial" in section
     assert "告警=realtime_provider_fallback" in section
     assert "新闻: missing" in section
+    assert "factor_snapshot: partial" in section
+    assert "technical_score:available/constructive" in section
     assert "news_context_missing" in section
     assert "新闻结果数：3" in section
     assert "intraday_realtime_overlay" in section
@@ -111,6 +143,8 @@ def test_english_summary_renders_readable_statuses() -> None:
     assert "Analysis Context Pack Summary" in section
     assert "Subject: 600519 (贵州茅台)" in section
     assert "quote: fallback" in section
+    assert "factor snapshot: partial" in section
+    assert "price_heat:available/overheated" in section
     assert "news: missing" in section
     assert "News result count: 3" in section
 
@@ -121,6 +155,7 @@ def test_summary_does_not_dump_values_or_sensitive_payloads() -> None:
     assert "analysis_context_pack" not in section
     assert "完整新闻正文不应进入摘要" not in section
     assert "多头排列" not in section
+    assert "raw_score" not in section
     assert "secret-token" not in section
     assert "hooks.example.test" not in section
     assert "webhook_url" not in section

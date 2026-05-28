@@ -350,6 +350,82 @@ def test_fundamentals_marks_conflicting_capital_flow_without_hot_price_guard() -
     assert "price_flow_hot_without_confirmed_inflow" not in block.warnings
 
 
+def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> None:
+    pack = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1880.0,
+                "change_60d": 31.2,
+                "volume_ratio": 2.4,
+                "turnover_rate": 5.5,
+            },
+            trend_result=_FakeTrend(
+                {
+                    "signal_score": 72,
+                    "bias_ma5": 6.2,
+                    "volume_ratio_5d": 1.8,
+                    "risk_factors": ["raw risk text should stay out"],
+                }
+            ),
+            fundamental_context={
+                "status": "ok",
+                "coverage": {
+                    "valuation": "ok",
+                    "growth": "partial",
+                    "earnings": "ok",
+                    "capital_flow": "ok",
+                },
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": -1_000_000.0,
+                            "inflow_5d": -2_000_000.0,
+                            "inflow_10d": None,
+                        }
+                    },
+                },
+            },
+        )
+    )
+
+    block = pack.blocks["factor_snapshot"]
+    dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
+
+    assert block.status == ContextFieldStatus.AVAILABLE
+    assert dimensions["technical_score"]["label"] == "constructive"
+    assert dimensions["price_heat"]["label"] == "overheated"
+    assert dimensions["volume_price"]["label"] == "high_activity"
+    assert dimensions["quality_growth"]["label"] == "available"
+    assert dimensions["fund_flow"]["label"] == "risk_guard"
+    assert dimensions["risk"]["label"] == "has_risk_flags"
+    assert dimensions["confidence"]["label"] == "medium"
+    assert "capital_flow_broke_proxy" in block.warnings
+    assert "factor_snapshot_price_overheated" in block.warnings
+    assert "capital_flow_broke_proxy" in pack.data_quality.warnings
+    dumped = str(block.model_dump(mode="json"))
+    assert "1000000" not in dumped
+    assert "raw risk text" not in dumped
+
+
+def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote=None,
+            trend_result=None,
+            fundamental_context=None,
+        )
+    ).blocks["factor_snapshot"]
+
+    assert block.status == ContextFieldStatus.MISSING
+    assert (
+        block.items["technical_score"].missing_reason == "technical_score_missing"
+    )
+    assert block.items["confidence"].missing_reason == "factor_snapshot_inputs_missing"
+
+
 def test_builder_does_not_hide_broken_artifact_to_dict() -> None:
     with pytest.raises(RuntimeError, match="broken trend artifact"):
         AnalysisContextBuilder.build(_artifacts(trend_result=_BrokenTrend()))

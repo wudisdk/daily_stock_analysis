@@ -23,6 +23,9 @@ _FUNDAMENTAL_FAILED_REASON = "fundamental_pipeline_failed"
 _CAPITAL_FLOW_BROKE_PROXY_WARNING = "capital_flow_broke_proxy"
 _CAPITAL_FLOW_CONFLICT_WARNING = "capital_flow_conflicting_signals"
 _PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING = "price_flow_hot_without_confirmed_inflow"
+_FACTOR_SNAPSHOT_SOURCE = "analysis_context_builder.factor_snapshot"
+_FACTOR_PRICE_OVERHEATED_WARNING = "factor_snapshot_price_overheated"
+_FACTOR_LOW_CONFIDENCE_WARNING = "factor_snapshot_low_confidence"
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,12 @@ class AnalysisContextBuilder:
         data_quality_warnings.extend(technical_warnings)
         blocks["chip"] = _build_chip_block(artifacts)
         blocks["fundamentals"] = _build_fundamentals_block(artifacts)
-        data_quality_warnings.extend(blocks["fundamentals"].warnings)
+        _extend_unique(data_quality_warnings, blocks["fundamentals"].warnings)
+        blocks["factor_snapshot"] = _build_factor_snapshot_block(
+            artifacts,
+            capital_flow_warnings=blocks["fundamentals"].warnings,
+        )
+        _extend_unique(data_quality_warnings, blocks["factor_snapshot"].warnings)
         blocks["news"] = _build_news_block(artifacts)
 
         return AnalysisContextPack(
@@ -406,6 +414,347 @@ def _fundamental_guard_warnings(
         warnings.append(_PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING)
 
     return warnings
+
+
+def _build_factor_snapshot_block(
+    artifacts: PipelineAnalysisArtifacts,
+    *,
+    capital_flow_warnings: Sequence[str],
+) -> AnalysisContextBlock:
+    """Build a compact DuckDB-style factor snapshot from fetched artifacts only."""
+    quote = _to_dict(artifacts.realtime_quote)
+    trend = _to_dict(artifacts.trend_result)
+    context = (
+        artifacts.fundamental_context
+        if isinstance(artifacts.fundamental_context, Mapping)
+        else {}
+    )
+    coverage = context.get("coverage") if isinstance(context.get("coverage"), Mapping) else {}
+
+    dimensions = [
+        _technical_score_dimension(trend),
+        _price_heat_dimension(trend, quote),
+        _volume_price_dimension(trend, quote),
+        _coverage_dimension(
+            "valuation",
+            [coverage.get("valuation")],
+            missing_reason="valuation_snapshot_missing",
+            not_supported_reason="valuation_not_supported",
+        ),
+        _coverage_dimension(
+            "quality_growth",
+            [coverage.get("growth"), coverage.get("earnings")],
+            missing_reason="quality_growth_snapshot_missing",
+            not_supported_reason="quality_growth_not_supported",
+        ),
+        _fund_flow_dimension(context, coverage, capital_flow_warnings),
+    ]
+    dimensions.append(_risk_dimension(trend, dimensions, capital_flow_warnings))
+    dimensions.append(_confidence_dimension(dimensions, capital_flow_warnings))
+
+    available_count = sum(
+        1 for dimension in dimensions[:-1] if _dimension_is_available(dimension)
+    )
+    if available_count >= 5:
+        block_status = ContextFieldStatus.AVAILABLE
+    elif available_count > 0:
+        block_status = ContextFieldStatus.PARTIAL
+    else:
+        block_status = ContextFieldStatus.MISSING
+
+    warnings: List[str] = []
+    _extend_unique(warnings, capital_flow_warnings)
+    if any(
+        dimension["name"] == "price_heat" and dimension.get("label") == "overheated"
+        for dimension in dimensions
+    ):
+        warnings.append(_FACTOR_PRICE_OVERHEATED_WARNING)
+    if dimensions[-1].get("label") == "low":
+        warnings.append(_FACTOR_LOW_CONFIDENCE_WARNING)
+
+    items: Dict[str, AnalysisContextItem] = {}
+    for dimension in dimensions:
+        value = {"label": dimension["label"]} if dimension.get("label") else None
+        items[dimension["name"]] = AnalysisContextItem(
+            status=dimension["status"],
+            value=value,
+            source=_FACTOR_SNAPSHOT_SOURCE,
+            missing_reason=dimension.get("missing_reason"),
+            warnings=list(dimension.get("warnings") or []),
+        )
+
+    metadata = {
+        "dimensions": [
+            {
+                key: (
+                    value.value
+                    if isinstance(value, ContextFieldStatus)
+                    else value
+                )
+                for key, value in {
+                    "name": dimension["name"],
+                    "status": dimension["status"],
+                    "label": dimension.get("label"),
+                    "missing_reason": dimension.get("missing_reason"),
+                }.items()
+                if value not in (None, "")
+            }
+            for dimension in dimensions
+        ],
+        "derived_from": _factor_snapshot_sources(quote, trend, context),
+    }
+
+    return AnalysisContextBlock(
+        status=block_status,
+        items=items,
+        source=_FACTOR_SNAPSHOT_SOURCE,
+        warnings=warnings,
+        metadata=metadata,
+    )
+
+
+def _technical_score_dimension(trend: Mapping[str, Any]) -> Dict[str, Any]:
+    score = _numeric_value(trend.get("signal_score"))
+    if score is None:
+        return _dimension(
+            "technical_score",
+            ContextFieldStatus.MISSING,
+            missing_reason="technical_score_missing",
+        )
+    if score >= 75:
+        label = "strong"
+    elif score >= 60:
+        label = "constructive"
+    elif score >= 45:
+        label = "neutral"
+    else:
+        label = "weak"
+    return _dimension("technical_score", ContextFieldStatus.AVAILABLE, label=label)
+
+
+def _price_heat_dimension(
+    trend: Mapping[str, Any],
+    quote: Mapping[str, Any],
+) -> Dict[str, Any]:
+    bias_ma5 = _numeric_value(trend.get("bias_ma5"))
+    change_60d = _numeric_value(quote.get("change_60d"))
+    if bias_ma5 is None and change_60d is None:
+        return _dimension(
+            "price_heat",
+            ContextFieldStatus.MISSING,
+            missing_reason="price_heat_inputs_missing",
+        )
+    if (bias_ma5 is not None and bias_ma5 > 5) or (
+        change_60d is not None and change_60d >= 25
+    ):
+        label = "overheated"
+    elif (bias_ma5 is not None and bias_ma5 > 3) or (
+        change_60d is not None and change_60d >= 15
+    ):
+        label = "extended"
+    elif (bias_ma5 is not None and bias_ma5 <= -5) or (
+        change_60d is not None and change_60d <= -15
+    ):
+        label = "cooling"
+    else:
+        label = "normal"
+    return _dimension("price_heat", ContextFieldStatus.AVAILABLE, label=label)
+
+
+def _volume_price_dimension(
+    trend: Mapping[str, Any],
+    quote: Mapping[str, Any],
+) -> Dict[str, Any]:
+    volume_ratio = _numeric_value(quote.get("volume_ratio"))
+    if volume_ratio is None:
+        volume_ratio = _numeric_value(trend.get("volume_ratio_5d"))
+    turnover_rate = _numeric_value(quote.get("turnover_rate"))
+    if volume_ratio is None and turnover_rate is None:
+        return _dimension(
+            "volume_price",
+            ContextFieldStatus.MISSING,
+            missing_reason="volume_price_inputs_missing",
+        )
+    if (volume_ratio is not None and volume_ratio >= 2.0) or (
+        turnover_rate is not None and turnover_rate >= 5.0
+    ):
+        label = "high_activity"
+    elif (volume_ratio is not None and volume_ratio >= 1.2) or (
+        turnover_rate is not None and turnover_rate >= 2.0
+    ):
+        label = "active"
+    elif (volume_ratio is not None and volume_ratio <= 0.8) or (
+        turnover_rate is not None and turnover_rate <= 0.5
+    ):
+        label = "quiet"
+    else:
+        label = "normal"
+    return _dimension("volume_price", ContextFieldStatus.AVAILABLE, label=label)
+
+
+def _coverage_dimension(
+    name: str,
+    values: Sequence[Any],
+    *,
+    missing_reason: str,
+    not_supported_reason: str,
+) -> Dict[str, Any]:
+    statuses = [_coverage_status(value) for value in values]
+    statuses = [status for status in statuses if status]
+    if not statuses:
+        return _dimension(
+            name,
+            ContextFieldStatus.MISSING,
+            missing_reason=missing_reason,
+        )
+    if any(status in {"ok", "available"} for status in statuses):
+        return _dimension(name, ContextFieldStatus.AVAILABLE, label="available")
+    if any(status == "partial" for status in statuses):
+        return _dimension(name, ContextFieldStatus.PARTIAL, label="partial")
+    if all(status == "not_supported" for status in statuses):
+        return _dimension(
+            name,
+            ContextFieldStatus.NOT_SUPPORTED,
+            label="not_supported",
+            missing_reason=not_supported_reason,
+        )
+    return _dimension(name, ContextFieldStatus.MISSING, missing_reason=missing_reason)
+
+
+def _fund_flow_dimension(
+    context: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+    capital_flow_warnings: Sequence[str],
+) -> Dict[str, Any]:
+    if capital_flow_warnings:
+        return _dimension(
+            "fund_flow",
+            ContextFieldStatus.AVAILABLE,
+            label="risk_guard",
+            warnings=capital_flow_warnings,
+        )
+    coverage_status = _coverage_status(coverage.get("capital_flow"))
+    block = context.get("capital_flow") if isinstance(context, Mapping) else None
+    block_status = (
+        _coverage_status(block.get("status"))
+        if isinstance(block, Mapping)
+        else None
+    )
+    status_value = coverage_status or block_status
+    if status_value in {"ok", "available"}:
+        return _dimension("fund_flow", ContextFieldStatus.AVAILABLE, label="available")
+    if status_value == "partial":
+        return _dimension("fund_flow", ContextFieldStatus.PARTIAL, label="partial")
+    if status_value == "not_supported":
+        return _dimension(
+            "fund_flow",
+            ContextFieldStatus.NOT_SUPPORTED,
+            label="not_supported",
+            missing_reason="fund_flow_not_supported",
+        )
+    return _dimension(
+        "fund_flow",
+        ContextFieldStatus.MISSING,
+        missing_reason="fund_flow_snapshot_missing",
+    )
+
+
+def _risk_dimension(
+    trend: Mapping[str, Any],
+    dimensions: Sequence[Mapping[str, Any]],
+    capital_flow_warnings: Sequence[str],
+) -> Dict[str, Any]:
+    risk_factors = trend.get("risk_factors")
+    trend_risk_count = len(risk_factors) if isinstance(risk_factors, list) else 0
+    price_heat_risk = any(
+        dimension.get("name") == "price_heat"
+        and dimension.get("label") == "overheated"
+        for dimension in dimensions
+    )
+    warning_count = len([warning for warning in capital_flow_warnings if warning])
+    risk_count = trend_risk_count + warning_count + (1 if price_heat_risk else 0)
+    if trend or warning_count or price_heat_risk:
+        return _dimension(
+            "risk",
+            ContextFieldStatus.AVAILABLE,
+            label="has_risk_flags" if risk_count else "no_risk_flags",
+        )
+    return _dimension("risk", ContextFieldStatus.MISSING, missing_reason="risk_inputs_missing")
+
+
+def _confidence_dimension(
+    dimensions: Sequence[Mapping[str, Any]],
+    capital_flow_warnings: Sequence[str],
+) -> Dict[str, Any]:
+    available_count = sum(1 for dimension in dimensions if _dimension_is_available(dimension))
+    if available_count >= 5 and not capital_flow_warnings:
+        label = "high"
+    elif available_count >= 3:
+        label = "medium"
+    elif available_count > 0:
+        label = "low"
+    else:
+        return _dimension(
+            "confidence",
+            ContextFieldStatus.MISSING,
+            missing_reason="factor_snapshot_inputs_missing",
+        )
+    return _dimension("confidence", ContextFieldStatus.AVAILABLE, label=label)
+
+
+def _dimension(
+    name: str,
+    status: ContextFieldStatus,
+    *,
+    label: Optional[str] = None,
+    missing_reason: Optional[str] = None,
+    warnings: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "label": label,
+        "missing_reason": missing_reason,
+        "warnings": [warning for warning in warnings or [] if warning],
+    }
+
+
+def _dimension_is_available(dimension: Mapping[str, Any]) -> bool:
+    return dimension.get("status") in {
+        ContextFieldStatus.AVAILABLE,
+        ContextFieldStatus.PARTIAL,
+        ContextFieldStatus.FALLBACK,
+        ContextFieldStatus.STALE,
+        ContextFieldStatus.ESTIMATED,
+    }
+
+
+def _coverage_status(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
+def _factor_snapshot_sources(
+    quote: Mapping[str, Any],
+    trend: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> List[str]:
+    sources: List[str] = []
+    if quote:
+        sources.append("quote")
+    if trend:
+        sources.append("technical")
+    if context:
+        sources.append("fundamentals")
+    return sources
+
+
+def _extend_unique(target: List[str], values: Sequence[str]) -> None:
+    for value in values:
+        if value and value not in target:
+            target.append(value)
 
 
 def _capital_flow_stock_flow(context: Mapping[str, Any]) -> Dict[str, Any]:

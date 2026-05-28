@@ -22,7 +22,19 @@ _BLOCK_LABELS_EN = {
     "technical": "technical",
     "chip": "chip",
     "fundamentals": "fundamentals",
+    "factor_snapshot": "factor snapshot",
     "news": "news",
+}
+
+_FACTOR_DIMENSION_NAMES = {
+    "technical_score",
+    "price_heat",
+    "volume_price",
+    "valuation",
+    "quality_growth",
+    "fund_flow",
+    "risk",
+    "confidence",
 }
 
 _SENSITIVE_MARKERS = (
@@ -154,7 +166,7 @@ def _block_lines(payload: Dict[str, Any], *, lang: str) -> List[str]:
         return []
 
     labels = _BLOCK_LABELS_EN if lang == "en" else _BLOCK_LABELS_ZH
-    ordered_keys = [key for key in _BLOCK_LABELS_ZH if key in blocks]
+    ordered_keys = [key for key in _BLOCK_LABELS_EN if key in blocks]
     ordered_keys.extend(key for key in blocks if key not in ordered_keys)
 
     lines: List[str] = []
@@ -182,6 +194,11 @@ def _block_lines(payload: Dict[str, Any], *, lang: str) -> List[str]:
         if reasons:
             reason_label = "missing_reason" if lang == "en" else "missing_reason"
             parts.append(f"{reason_label}={_join_text(reasons, lang=lang)}")
+
+        if key == "factor_snapshot":
+            dimensions = _factor_snapshot_dimensions(block)
+            if dimensions:
+                parts.append(f"dimensions={dimensions}")
 
         lines.append("；".join(parts) if lang == "zh" else "; ".join(parts))
     return lines
@@ -224,6 +241,30 @@ def _item_missing_reasons(items: Any) -> List[str]:
         if reason and reason not in reasons:
             reasons.append(reason)
     return reasons[:3]
+
+
+def _factor_snapshot_dimensions(block: Mapping[str, Any]) -> str:
+    metadata = block.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return ""
+    dimensions = metadata.get("dimensions")
+    if not isinstance(dimensions, list):
+        return ""
+
+    parts: List[str] = []
+    for dimension in dimensions:
+        if not isinstance(dimension, Mapping):
+            continue
+        name = _safe_text(dimension.get("name"))
+        if name not in _FACTOR_DIMENSION_NAMES:
+            continue
+        status = _safe_text(dimension.get("status")) or "unknown"
+        label = _safe_text(dimension.get("label"))
+        text = f"{name}:{status}"
+        if label:
+            text += f"/{label}"
+        parts.append(text)
+    return ", ".join(parts[:8])
 
 
 def _nested(value: Any, *keys: str) -> Any:

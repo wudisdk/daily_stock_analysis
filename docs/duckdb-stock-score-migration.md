@@ -29,6 +29,12 @@ not turn future returns into routine scoring inputs.
     `capital_flow_broke_proxy`, `capital_flow_conflicting_signals`, and
     `price_flow_hot_without_confirmed_inflow` to the prompt summary without
     storing raw capital-flow amounts in the summary.
+  - The `factor_snapshot` block now compresses existing quote, technical, and
+    fundamental artifacts into DuckDB-style as-of dimensions: technical score
+    band, price heat, volume-price activity, valuation coverage,
+    quality/growth coverage, fund-flow guard status, risk flag status, and
+    confidence. The prompt renderer only exposes whitelisted labels and
+    statuses, not raw factor payloads or future-return labels.
 - `.github/workflows/00-daily-analysis.yml`
   - The hosted daily workflow defaults to DeepSeek LiteLLM models and a
     Tushare-first realtime source order.
@@ -58,9 +64,8 @@ not turn future returns into routine scoring inputs.
 
 ## Next Implementation Milestones
 
-1. Add a compact `factor_snapshot` block to `AnalysisContextPack` using only
-   as-of fields: valuation, quality, growth, momentum, volume-price,
-   fund-flow, risk, and confidence.
+1. Expand `factor_snapshot` with additional as-of fields when they are already
+   fetched safely: industry/theme, institution ownership, and de-risk flags.
 2. Add a small candidate snapshot export path for GitHub Actions artifacts, then
    let DeepSeek read that fixed snapshot instead of re-querying mutable context.
 3. Extend the current `flow_broke` prompt guard into a deterministic

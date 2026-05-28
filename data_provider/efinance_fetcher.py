@@ -22,10 +22,12 @@ EfinanceFetcher - 优先数据源 (Priority 0)
 
 import logging
 import os
+import queue
 import random
 import re
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
@@ -166,26 +168,37 @@ def _is_us_code(stock_code: str) -> bool:
 
 
 def _ef_call_with_timeout(func, *args, timeout=None, **kwargs):
-    """Run an efinance library call in a thread with a timeout.
+    """Run an efinance library call with a daemon-worker timeout.
 
-    efinance internally uses requests/urllib3 with no timeout, so when
-    eastmoney hosts are unreachable the call can hang for many minutes.
-    This helper caps the *calling thread's* wait time.  Note: Python threads
-    cannot be forcibly killed, so the worker thread may continue running in
-    the background until the OS-level TCP timeout fires or the process exits.
-    This is acceptable — the calling thread returns promptly on timeout.
+    efinance/urllib3 can keep Eastmoney requests alive for minutes. A daemon
+    worker lets optional calls fail open without keeping CLI/Actions alive.
     """
     if timeout is None:
         timeout = _EF_CALL_TIMEOUT
-    # Do NOT use 'with ThreadPoolExecutor(...)' here: the context manager calls
-    # shutdown(wait=True) on __exit__, which would re-block on the hung thread.
-    executor = ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(func, *args, **kwargs)
-        return future.result(timeout=timeout)
-    finally:
-        # wait=False: calling thread returns immediately; worker cleans up later
-        executor.shutdown(wait=False)
+    result_queue: "queue.Queue[Tuple[bool, Any]]" = queue.Queue(maxsize=1)
+
+    def _target() -> None:
+        try:
+            result_queue.put((True, func(*args, **kwargs)))
+        except BaseException as exc:
+            result_queue.put((False, exc))
+
+    # Python cannot forcibly kill a stuck requests call after timeout, so the
+    # worker must be daemonized to avoid blocking process shutdown.
+    worker = threading.Thread(
+        target=_target,
+        name=f"efinance-call-{getattr(func, '__name__', 'api')}",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise FuturesTimeoutError()
+
+    ok, payload = result_queue.get_nowait()
+    if ok:
+        return payload
+    raise payload
 
 
 def _classify_eastmoney_error(exc: Exception) -> Tuple[str, str]:

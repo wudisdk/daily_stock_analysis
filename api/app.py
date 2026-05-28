@@ -41,12 +41,17 @@ _INDEX_ASSET_REF_PATTERN = re.compile(
     r"""(?:src|href)\s*=\s*["'](/assets/[^"']+)["']""",
     re.IGNORECASE,
 )
+_JS_MEDIA_TYPES = frozenset({"application/javascript", "text/javascript"})
 _SAFE_MISSING_ASSET_MEDIA_TYPES = frozenset({"text/css", "text/javascript"})
 _FRONTEND_INDEX_NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+# Keep JS assets on the MIME type expected by existing browser-safety tests
+# across Python/Starlette versions.
+mimetypes.add_type("text/javascript", ".js")
 
 
 def _frontend_index_response(static_dir: Path) -> FileResponse:
@@ -118,6 +123,8 @@ def _resolve_asset_path(assets_dir: Path, asset_path: str) -> Optional[Path]:
 def _missing_asset_media_type(asset_path: str) -> str:
     """Return a safe media type for a missing asset response."""
     content_type, _ = mimetypes.guess_type(asset_path)
+    if content_type in _JS_MEDIA_TYPES:
+        return "text/javascript"
     if content_type in _SAFE_MISSING_ASSET_MEDIA_TYPES:
         return content_type
     return "text/plain"

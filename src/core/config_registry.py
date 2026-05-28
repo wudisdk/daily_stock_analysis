@@ -199,7 +199,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "title": "LiteLLM Request Timeout",
         "description": "Per-request timeout in seconds for LiteLLM calls. Keeps GitHub Actions and scheduled jobs from hanging on stalled provider connections.",
         "category": "ai_model",
-        "data_type": "float",
+        "data_type": "number",
         "ui_control": "number",
         "is_sensitive": False,
         "is_required": False,

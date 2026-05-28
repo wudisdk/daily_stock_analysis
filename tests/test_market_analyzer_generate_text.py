@@ -82,6 +82,7 @@ class TestAnalyzerGenerateText:
             from src.analyzer import GeminiAnalyzer
             analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
             analyzer._router = None
+            analyzer._litellm_available = True
             return analyzer
 
     def test_generate_text_returns_llm_response(self):
@@ -290,6 +291,7 @@ class TestAnalyzerGenerateText:
         analyzer._config_override = SimpleNamespace(
             litellm_model="gemini/gemini-2.0-flash",
             litellm_fallback_models=[],
+            litellm_timeout_seconds=12.5,
             llm_model_list=[],
         )
 
@@ -323,6 +325,8 @@ class TestAnalyzerGenerateText:
         assert len(dispatch_calls) == 2
         assert dispatch_calls[0]["stream"] is True
         assert "stream" not in dispatch_calls[1]
+        assert dispatch_calls[0]["timeout"] == 12.5
+        assert dispatch_calls[1]["timeout"] == 12.5
 
     @pytest.mark.parametrize(
         "provider_model,response_payload,expected_text",
@@ -1394,7 +1398,7 @@ Sector text.
         import ast
         import pathlib
 
-        src = pathlib.Path("src/market_analyzer.py").read_text()
+        src = pathlib.Path("src/market_analyzer.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
         forbidden = {
             "_model", "_router", "_use_openai", "_use_anthropic",  # historical

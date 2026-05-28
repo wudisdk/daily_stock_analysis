@@ -2128,6 +2128,9 @@ class GeminiAnalyzer:
         wire_models = resolve_fallback_litellm_wire_models(model, config.llm_model_list)
         register_fallback_model_pricing(wire_models)
         effective_kwargs = dict(call_kwargs)
+        timeout_seconds = self._resolve_litellm_timeout_seconds(config)
+        if timeout_seconds is not None and "timeout" not in effective_kwargs:
+            effective_kwargs["timeout"] = timeout_seconds
         if use_channel_router and self._router and model in router_model_names:
             return self._router.completion(**effective_kwargs)
         if self._router and model == config.litellm_model and not use_channel_router:
@@ -2140,6 +2143,20 @@ class GeminiAnalyzer:
             raise RuntimeError(f"API key not configured for {model}")
         effective_kwargs.update(extra_litellm_params(model, config))
         return litellm.completion(**effective_kwargs)
+
+    @staticmethod
+    def _resolve_litellm_timeout_seconds(config: Config) -> Optional[float]:
+        """Return a sane LiteLLM request timeout, or None when explicitly disabled."""
+        raw_timeout = getattr(config, "litellm_timeout_seconds", 120.0)
+        if not isinstance(raw_timeout, (int, float, str)):
+            raw_timeout = 120.0
+        if isinstance(raw_timeout, str) and not raw_timeout.strip():
+            raw_timeout = 120.0
+        try:
+            timeout_seconds = float(raw_timeout)
+        except (TypeError, ValueError):
+            timeout_seconds = 120.0
+        return timeout_seconds if timeout_seconds > 0 else None
 
     def _normalize_usage(self, usage_obj: Any) -> Dict[str, Any]:
         """Normalize usage objects from LiteLLM responses/chunks."""
@@ -2351,6 +2368,7 @@ class GeminiAnalyzer:
         last_usage: Dict[str, Any] = {}
         effective_system_prompt = system_prompt or self.TEXT_SYSTEM_PROMPT
         router_model_names = set(get_configured_llm_models(config.llm_model_list))
+        timeout_seconds = self._resolve_litellm_timeout_seconds(config)
         for model in models_to_try:
             recovery_model_list = config.llm_model_list
             legacy_router_model_list = getattr(self, "_legacy_router_model_list", None) or []
@@ -2368,6 +2386,8 @@ class GeminiAnalyzer:
                     ],
                     "max_tokens": max_tokens,
                 }
+                if timeout_seconds is not None:
+                    call_kwargs["timeout"] = timeout_seconds
                 if extra:
                     call_kwargs["extra_body"] = extra
                 uses_router = (
@@ -2768,7 +2788,7 @@ class GeminiAnalyzer:
             context.get("market_phase_context"),
             report_language=report_language,
         )
-        prompt += """
+        prompt += f"""
 
 ## 📈 技术面数据
 

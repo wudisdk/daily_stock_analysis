@@ -195,6 +195,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     # ------------------------------------------------------------------
     # AI Model – Multi-channel LLM configuration
     # ------------------------------------------------------------------
+    "LITELLM_TIMEOUT_SECONDS": {
+        "title": "LiteLLM Request Timeout",
+        "description": "Per-request timeout in seconds for LiteLLM calls. Keeps GitHub Actions and scheduled jobs from hanging on stalled provider connections.",
+        "category": "ai_model",
+        "data_type": "float",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "120",
+        "options": [],
+        "validation": {"min": 1},
+        "display_order": 3,
+        "help_key": "settings.ai_model.LITELLM_TIMEOUT_SECONDS",
+        "examples": [
+            "LITELLM_TIMEOUT_SECONDS=120",
+            "LITELLM_TIMEOUT_SECONDS=90",
+        ],
+        "docs": [
+            {
+                "label": "LLM 閰嶇疆鎸囧崡",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/LLM_CONFIG_GUIDE.md",
+            },
+        ],
+        "warning_codes": [],
+    },
     "LITELLM_CONFIG": {
         "title": "Advanced Model Routing Config",
         "description": "Path to an advanced model routing YAML file (expert use). When valid/parseable and yields a model_list, it takes priority over channels and legacy keys; otherwise channels/legacy are used as fallback.",

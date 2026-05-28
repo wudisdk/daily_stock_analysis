@@ -162,6 +162,37 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
         self.assertIn("财报与分红（价值投资口径）", prompt)
         self.assertIn("禁止编造", prompt)
 
+    def test_prompt_interpolates_today_market_fields(self) -> None:
+        with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
+            analyzer = GeminiAnalyzer()
+
+        context = {
+            "code": "600519",
+            "stock_name": "stock-name",
+            "date": "2026-05-28",
+            "today": {
+                "close": 12.34,
+                "open": 12.0,
+                "high": 12.8,
+                "low": 11.9,
+                "pct_chg": 2.1,
+                "volume": 123456,
+                "amount": 654321,
+                "ma5": 11.1,
+                "ma10": 10.9,
+                "ma20": 10.5,
+            },
+            "ma_status": "bullish",
+        }
+
+        prompt = analyzer._format_prompt(context, "stock-name", news_context=None)
+
+        self.assertNotIn("{today.get(", prompt)
+        self.assertNotIn("{self._format", prompt)
+        self.assertIn("12.34", prompt)
+        self.assertIn("11.1", prompt)
+        self.assertIn("bullish", prompt)
+
     def test_prompt_includes_capital_flow_as_operation_filter(self) -> None:
         with patch.object(GeminiAnalyzer, "_init_litellm", return_value=None):
             analyzer = GeminiAnalyzer()

@@ -74,6 +74,21 @@ def _load_network_smoke_envs() -> list[dict[str, str]]:
     return env_steps
 
 
+def _load_network_smoke_steps() -> list[dict]:
+    workflow = yaml.safe_load(NETWORK_SMOKE_PATH.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["smoke"]["steps"]
+    smoke_steps = [
+        step
+        for step in steps
+        if step.get("name") in {
+            "Run pytest network smoke (non-blocking)",
+            "Run quick smoke (non-blocking)",
+        }
+    ]
+    assert len(smoke_steps) == 2
+    return smoke_steps
+
+
 def test_daily_analysis_maps_all_provider_template_channels() -> None:
     templates = _extract_provider_templates()
     env = _load_daily_analysis_env()
@@ -119,6 +134,9 @@ def test_daily_analysis_defaults_to_deepseek_v4_and_stable_search() -> None:
     assert env["LITELLM_FALLBACK_MODELS"] == (
         "${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}"
     )
+    assert env["LITELLM_TIMEOUT_SECONDS"] == (
+        "${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '120' }}"
+    )
     assert env["LITELLM_LOG_LEVEL"] == (
         "${{ vars.LITELLM_LOG_LEVEL || secrets.LITELLM_LOG_LEVEL || 'ERROR' }}"
     )
@@ -138,6 +156,9 @@ def test_network_smoke_uses_actions_runtime_env() -> None:
         assert env["LITELLM_FALLBACK_MODELS"] == (
             "${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}"
         )
+        assert env["LITELLM_TIMEOUT_SECONDS"] == (
+            "${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '90' }}"
+        )
         assert env["DEEPSEEK_API_KEY"] == "${{ secrets.DEEPSEEK_API_KEY }}"
         assert env["TUSHARE_TOKEN"] == "${{ secrets.TUSHARE_TOKEN }}"
         assert env["TAVILY_API_KEYS"] == "${{ secrets.TAVILY_API_KEYS }}"
@@ -147,6 +168,13 @@ def test_network_smoke_uses_actions_runtime_env() -> None:
         assert env["SEARXNG_PUBLIC_INSTANCES_ENABLED"] == (
             "${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED || 'false' }}"
         )
+
+
+def test_network_smoke_steps_have_hard_timeouts() -> None:
+    steps_by_name = {step["name"]: step for step in _load_network_smoke_steps()}
+
+    assert steps_by_name["Run pytest network smoke (non-blocking)"]["timeout-minutes"] == 8
+    assert steps_by_name["Run quick smoke (non-blocking)"]["timeout-minutes"] == 10
 
 
 def test_env_example_includes_provider_template_channel_examples() -> None:

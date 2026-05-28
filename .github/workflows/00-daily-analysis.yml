@@ -67,6 +67,7 @@ jobs:
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-flash' }}
           LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}
+          LITELLM_TIMEOUT_SECONDS: ${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '120' }}
           AGENT_LITELLM_MODEL: ${{ vars.AGENT_LITELLM_MODEL || secrets.AGENT_LITELLM_MODEL }}
           VISION_MODEL: ${{ vars.VISION_MODEL || secrets.VISION_MODEL }}
           OPENAI_VISION_MODEL: ${{ vars.OPENAI_VISION_MODEL || secrets.OPENAI_VISION_MODEL }}

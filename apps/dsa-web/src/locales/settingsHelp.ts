@@ -86,6 +86,17 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['提升 LLM 调用失败时的可用性，但可能增加跨 provider 成本和响应差异。'],
     notes: ['不要把主模型重复加入备用模型列表。'],
   },
+  'settings.ai_model.LITELLM_TIMEOUT_SECONDS': {
+    title: 'LiteLLM 请求超时',
+    summary: '控制单次 LiteLLM 请求最多等待多少秒。',
+    usage: '填写秒数，例如 120。GitHub Actions 的 smoke 测试可使用更短的 90 秒。',
+    valueNotes: [
+      '用于避免 provider 连接中断或长时间无响应时卡住定时任务。',
+      '主模型和 fallback 模型都会使用该超时设置。',
+    ],
+    impact: ['影响普通分析、大盘复盘和 Agent 里通过 LiteLLM 发起的模型请求。'],
+    notes: ['过短可能导致慢模型提前失败；过长会延迟 fallback 或任务结束。'],
+  },
   'settings.ai_model.LITELLM_CONFIG': {
     title: '高级模型路由 YAML',
     summary: '指定 LiteLLM 原生 YAML 路由文件，适合复杂路由、限流和专家配置。',
@@ -934,6 +945,17 @@ const settingsHelpEnUS: SettingsHelpMap = {
     valueNotes: ['Fallbacks run only after primary model failures.', 'The channel editor removes unreachable managed-provider references on save.'],
     impact: ['Improves LLM availability, but can change cost, latency, and provider behavior.'],
     notes: ['Do not duplicate the primary model in the fallback list.'],
+  },
+  'settings.ai_model.LITELLM_TIMEOUT_SECONDS': {
+    title: 'LiteLLM Request Timeout',
+    summary: 'Sets the maximum wait time for a single LiteLLM request.',
+    usage: 'Use seconds, such as 120. GitHub Actions smoke checks can use a shorter 90-second value.',
+    valueNotes: [
+      'Prevents scheduled jobs from hanging on stalled provider connections.',
+      'The timeout applies to both primary and fallback model attempts.',
+    ],
+    impact: ['Affects regular analysis, market review, and Agent model requests that go through LiteLLM.'],
+    notes: ['Too short can fail slow models early; too long delays fallback or job completion.'],
   },
   'settings.ai_model.LITELLM_CONFIG': {
     title: 'Advanced Routing YAML',

@@ -42,6 +42,31 @@ class LLMChannelConfigTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_litellm_timeout_seconds_is_configurable(self, _mock_parse_yaml, _mock_setup_env) -> None:
+        env = {
+            "DEEPSEEK_API_KEY": "sk-deepseek-test-value",
+            "LITELLM_TIMEOUT_SECONDS": "45.5",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.litellm_timeout_seconds, 45.5)
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_litellm_timeout_seconds_defaults_to_two_minutes(self, _mock_parse_yaml, _mock_setup_env) -> None:
+        env = {
+            "DEEPSEEK_API_KEY": "sk-deepseek-test-value",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+
+        self.assertEqual(config.litellm_timeout_seconds, 120.0)
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     def test_anspire_legacy_overrides_stale_openai_base_url(self, _mock_parse_yaml, _mock_setup_env) -> None:
         env = {
             "ANSPIRE_API_KEYS": "sk-anspire-test-value",

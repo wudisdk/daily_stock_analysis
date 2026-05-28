@@ -45,7 +45,12 @@ from src.report_language import (
     normalize_report_language,
 )
 from src.search_service import SearchService
+from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.services.social_sentiment_service import SocialSentimentService
+from src.services.analysis_context_builder import (
+    AnalysisContextBuilder,
+    PipelineAnalysisArtifacts,
+)
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     current_diagnostic_snapshot,
@@ -509,6 +514,30 @@ class StockAnalysisPipeline:
             enhanced_context["market_phase_context"] = market_phase_context_dict
             
             # Step 7: 调用 AI 分析（传入增强的上下文和新闻）
+            report_language = normalize_report_language(getattr(self.config, "report_language", "zh"))
+            analysis_context_pack_summary = self._build_analysis_context_pack_summary(
+                PipelineAnalysisArtifacts(
+                    code=code,
+                    stock_name=stock_name,
+                    market=market,
+                    phase=market_phase_context_dict,
+                    base_context=context,
+                    enhanced_context=enhanced_context,
+                    realtime_quote=realtime_quote,
+                    trend_result=trend_result,
+                    chip_data=chip_data,
+                    fundamental_context=fundamental_context,
+                    news_context=news_context,
+                    news_result_count=news_result_count,
+                    metadata={
+                        "query_id": query_id,
+                        "trigger_source": self.query_source,
+                    },
+                ),
+                report_language=report_language,
+                code=code,
+                query_id=query_id,
+            )
             llm_progress_state = {"last_progress": 64}
 
             def _on_llm_stream(chars_received: int) -> None:
@@ -529,6 +558,7 @@ class StockAnalysisPipeline:
                     news_context=news_context,
                     progress_callback=self._emit_progress,
                     stream_progress_callback=_on_llm_stream,
+                    analysis_context_pack_summary=analysis_context_pack_summary,
                 )
                 llm_duration_ms = int((time.monotonic() - llm_started_at) * 1000)
                 record_llm_run(
@@ -937,6 +967,39 @@ class StockAnalysisPipeline:
             # Issue #1066: ensure deep history is in DB before agent tools run
             self._ensure_agent_history(code)
 
+            market = get_market_for_stock(normalize_stock_code(code))
+            analysis_context_pack_summary = self._build_analysis_context_pack_summary(
+                PipelineAnalysisArtifacts(
+                    code=code,
+                    stock_name=stock_name,
+                    market=market,
+                    phase=market_phase_context,
+                    base_context={
+                        "code": code,
+                        "stock_name": stock_name,
+                        "data_missing": True,
+                        "today": {},
+                        "yesterday": {},
+                    },
+                    enhanced_context={},
+                    realtime_quote=initial_context.get("realtime_quote"),
+                    trend_result=initial_context.get("trend_result"),
+                    chip_data=initial_context.get("chip_distribution"),
+                    fundamental_context=fundamental_context,
+                    news_context=initial_context.get("news_context"),
+                    news_result_count=None,
+                    metadata={
+                        "query_id": query_id,
+                        "trigger_source": self.query_source,
+                    },
+                ),
+                report_language=report_language,
+                code=code,
+                query_id=query_id,
+            )
+            if analysis_context_pack_summary:
+                initial_context["analysis_context_pack_summary"] = analysis_context_pack_summary
+
             # 运行 Agent
             if report_language == "en":
                 message = f"Analyze stock {code} ({stock_name}) and return the full decision dashboard JSON in English."
@@ -1039,7 +1102,7 @@ class StockAnalysisPipeline:
                 try:
                     agent_context_snapshot = self._build_context_snapshot(
                         enhanced_context={
-                            **self._without_market_phase_context(initial_context),
+                            **self._without_runtime_prompt_context(initial_context),
                             "stock_name": resolved_stock_name,
                         },
                         news_content=initial_context.get("news_context"),
@@ -1682,7 +1745,7 @@ class StockAnalysisPipeline:
         构建分析上下文快照
         """
         snapshot = {
-            "enhanced_context": self._without_market_phase_context(enhanced_context),
+            "enhanced_context": self._without_runtime_prompt_context(enhanced_context),
             "news_content": news_content,
             "realtime_quote_raw": self._safe_to_dict(realtime_quote),
             "chip_distribution_raw": self._safe_to_dict(chip_data),
@@ -1774,17 +1837,44 @@ class StockAnalysisPipeline:
             except Exception as exc:
                 logger.warning("回写通知诊断快照失败（fail-open）: %s", exc)
 
-    @staticmethod
-    def _without_market_phase_context(context: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Return a shallow copy without runtime-only market phase context.
+    def _build_analysis_context_pack_summary(
+        self,
+        artifacts: PipelineAnalysisArtifacts,
+        *,
+        report_language: str,
+        code: str,
+        query_id: str,
+    ) -> str:
+        try:
+            pack = AnalysisContextBuilder.build(artifacts)
+            return format_analysis_context_pack_prompt_section(
+                pack,
+                report_language=report_language,
+            )
+        except Exception as exc:
+            logger.warning(
+                "AnalysisContextPack summary generation failed for %s query_id=%s: %s",
+                code,
+                query_id,
+                exc,
+            )
+            return ""
 
-        P1a passes market phase through runtime analysis paths only; stable
-        history/task metadata is intentionally left for P1b.
+    @staticmethod
+    def _without_runtime_prompt_context(context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return a shallow copy without runtime-only prompt context.
+
+        Market phase and AnalysisContextPack summaries are prompt inputs only;
+        stable history/task metadata is intentionally left for later phases.
         """
         sanitized = dict(context)
         sanitized.pop("market_phase_context", None)
+        sanitized.pop("analysis_context_pack", None)
+        sanitized.pop("analysis_context_pack_summary", None)
         return sanitized
+
+    _without_market_phase_context = _without_runtime_prompt_context
 
     @staticmethod
     def _resolve_resume_target_date(

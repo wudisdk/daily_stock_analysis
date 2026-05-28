@@ -932,15 +932,19 @@ class TestBuildUserMessage(unittest.TestCase):
                     "effective_daily_bar_date": "2026-03-26",
                     "is_partial_bar": True,
                 },
+                "analysis_context_pack_summary": "\n## 分析上下文包摘要\n- 数据块状态：行情 available\n",
                 "realtime_quote": {"price": 1880.0},
             },
         )
         self.assertIn("股票代码: 600519", msg)
         self.assertIn("市场阶段上下文", msg)
+        self.assertIn("分析上下文包摘要", msg)
         self.assertIn("盘中", msg)
         self.assertIn("不得当作完整日线复盘", msg)
-        self.assertLess(msg.index("市场阶段上下文"), msg.index("[系统已获取的实时行情]"))
+        self.assertLess(msg.index("市场阶段上下文"), msg.index("分析上下文包摘要"))
+        self.assertLess(msg.index("分析上下文包摘要"), msg.index("[系统已获取的实时行情]"))
         self.assertNotIn("market_phase_context", msg)
+        self.assertNotIn("analysis_context_pack_summary", msg)
         self.assertNotIn("is_partial_bar", msg)
         self.assertNotIn("is_market_open_now", msg)
 

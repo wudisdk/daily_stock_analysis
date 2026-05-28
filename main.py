@@ -773,6 +773,20 @@ def _build_schedule_time_provider(default_schedule_time: str):
     return _provider
 
 
+def _close_default_asyncio_loop_for_cli() -> None:
+    """Best-effort cleanup for SDKs that leave a default asyncio loop open."""
+    try:
+        import asyncio
+
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+    except RuntimeError:
+        return
+
+    if loop.is_running() or loop.is_closed():
+        return
+    loop.close()
+
+
 def main() -> int:
     """
     主入口函数
@@ -1015,4 +1029,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    sys.exit(main())
+    exit_code = 1
+    try:
+        exit_code = main()
+    finally:
+        _close_default_asyncio_loop_for_cli()
+    sys.exit(exit_code)

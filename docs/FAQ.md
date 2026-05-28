@@ -214,7 +214,7 @@ PROXY_PORT=10809
 # 不需要配置 GEMINI_API_KEY
 OPENAI_API_KEY=sk-xxxxxxxx
 OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_MODEL=deepseek-v4-pro
 # deepseek-chat / deepseek-reasoner 仍兼容，但官方已标记为 2026/07/24 后废弃
 ```
 

@@ -15,7 +15,7 @@ from src.analyzer import GeminiAnalyzer
 
 def _config(**overrides):
     data = {
-        "litellm_model": "deepseek/deepseek-v4-flash",
+        "litellm_model": "deepseek/deepseek-v4-pro",
         "litellm_fallback_models": ["deepseek/deepseek-v4-pro"],
         "llm_model_list": [],
         "gemini_api_keys": [],

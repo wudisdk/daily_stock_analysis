@@ -63,7 +63,7 @@ Go to your forked repo → `Settings` → `Secrets and variables` → `Actions` 
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key | Optional |
 | `OPENAI_API_KEY` | OpenAI-compatible API Key (supports DeepSeek, Qwen, etc.) | Optional |
 | `OPENAI_BASE_URL` | OpenAI-compatible API endpoint (e.g., `https://api.deepseek.com`) | Optional |
-| `OPENAI_MODEL` | Model name (e.g., `deepseek-v4-flash`) | Optional |
+| `OPENAI_MODEL` | Model name (e.g., `deepseek-v4-pro`) | Optional |
 
 > *Note: Configure at least one model key or channel. Anspire or AIHubMix is the simplest starting point for one-key multi-model access.
 
@@ -931,7 +931,7 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 # OpenAI compatible (backup)
 OPENAI_API_KEY=xxx
 OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_MODEL=deepseek-v4-pro
 # deepseek-chat / deepseek-reasoner remain compatible, but DeepSeek marks them deprecated after 2026/07/24
 ```
 

@@ -8,21 +8,21 @@ from src.config import Config
 def test_status_command_reports_unified_llm_and_notification_channels():
     model_list = [
         {
-            "model_name": "deepseek/deepseek-v4-flash",
+            "model_name": "deepseek/deepseek-v4-pro",
             "litellm_params": {
-                "model": "deepseek/deepseek-v4-flash",
+                "model": "deepseek/deepseek-v4-pro",
                 "api_key": "sk-test",
             },
         }
     ]
     config = Config(
         stock_list=["600519", "AAPL"],
-        litellm_model="deepseek/deepseek-v4-flash",
+        litellm_model="deepseek/deepseek-v4-pro",
         agent_litellm_model="openai/gpt-4o-mini",
         llm_channels=[
             {
                 "name": "deepseek",
-                "models": ["deepseek/deepseek-v4-flash"],
+                "models": ["deepseek/deepseek-v4-pro"],
             }
         ],
         llm_models_source="llm_channels",
@@ -37,7 +37,7 @@ def test_status_command_reports_unified_llm_and_notification_channels():
     text = command._format_status(status, "telegram")
 
     assert status["ai_available"] is True
-    assert "主模型: deepseek/deepseek-v4-flash" in text
+    assert "主模型: deepseek/deepseek-v4-pro" in text
     assert "Agent 模型: openai/gpt-4o-mini" in text
     assert "LLM 渠道: deepseek" in text
     assert "自定义 Webhook: ✅" in text
@@ -81,15 +81,15 @@ def test_status_command_keeps_channel_mode_priority_over_legacy_keys():
         llm_channels=[
             {
                 "name": "deepseek",
-                "models": ["deepseek/deepseek-v4-flash"],
+                "models": ["deepseek/deepseek-v4-pro"],
             }
         ],
         llm_models_source="llm_channels",
         llm_model_list=[
             {
-                "model_name": "deepseek/deepseek-v4-flash",
+                "model_name": "deepseek/deepseek-v4-pro",
                 "litellm_params": {
-                    "model": "deepseek/deepseek-v4-flash",
+                    "model": "deepseek/deepseek-v4-pro",
                     "api_key": "sk-test",
                 },
             }
@@ -113,15 +113,15 @@ def test_status_command_requires_primary_model_in_configured_router_models():
         llm_channels=[
             {
                 "name": "deepseek",
-                "models": ["deepseek/deepseek-v4-flash"],
+                "models": ["deepseek/deepseek-v4-pro"],
             }
         ],
         llm_models_source="llm_channels",
         llm_model_list=[
             {
-                "model_name": "deepseek/deepseek-v4-flash",
+                "model_name": "deepseek/deepseek-v4-pro",
                 "litellm_params": {
-                    "model": "deepseek/deepseek-v4-flash",
+                    "model": "deepseek/deepseek-v4-pro",
                     "api_key": "sk-test",
                 },
             }

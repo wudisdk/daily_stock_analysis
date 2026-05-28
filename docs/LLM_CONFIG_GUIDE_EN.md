@@ -59,8 +59,8 @@ LITELLM_MODEL=openai/deepseek-ai/DeepSeek-V3
 # Fill in the API Key requested from the official DeepSeek platform
 DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
-*Compatibility note: with only this line, the system still defaults to `deepseek/deepseek-chat` and logs a migration warning.*
-`deepseek-chat` / `deepseek-reasoner` still work for compatibility with old configs, but DeepSeek marks them deprecated after 2026/07/24. New configs should migrate through the Web quick channel or explicitly set `LITELLM_MODEL=deepseek/deepseek-v4-flash` for `deepseek-v4-flash` / `deepseek-v4-pro`.
+*Compatibility note: with only this line, the system defaults to `deepseek/deepseek-v4-pro`.*
+`deepseek-chat` / `deepseek-reasoner` still work for compatibility with old configs, but DeepSeek marks them deprecated after 2026/07/24. New configs should migrate through the Web quick channel or explicitly set `LITELLM_MODEL=deepseek/deepseek-v4-pro` for `deepseek-v4-pro`.
 
 ### Example 3: Using the Free Gemini API
 ```env
@@ -149,7 +149,7 @@ LLM_CHANNELS=deepseek,aihubmix
 # 2. Channel 1: Configure Official DeepSeek
 LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_DEEPSEEK_API_KEY=sk-1111111111111
-LLM_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro
+LLM_DEEPSEEK_MODELS=deepseek-v4-pro
 
 # 3. Channel 2: Configure a common relay/proxy API
 LLM_AIHUBMIX_BASE_URL=https://api.aihubmix.com/v1
@@ -158,7 +158,7 @@ LLM_AIHUBMIX_MODELS=gpt-5.5,claude-sonnet-4-6
 
 # 4. [Key Step] Specify the primary model and fallback list
 # Set your primary model:
-LITELLM_MODEL=deepseek/deepseek-v4-flash
+LITELLM_MODEL=deepseek/deepseek-v4-pro
 # Optional: set an Agent-only primary model (empty = inherit the primary model)
 AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro
 # If the primary model crashes, try these fallbacks sequentially:
@@ -237,7 +237,7 @@ Example `litellm_config.yaml`:
 model_list:
   - model_name: my-smart-model
     litellm_params:
-      model: deepseek/deepseek-v4-flash
+      model: deepseek/deepseek-v4-pro
       api_base: https://api.deepseek.com
       api_key: "os.environ/MY_CUSTOM_SECRET_KEY"  # Fetch from environment vars for security
 

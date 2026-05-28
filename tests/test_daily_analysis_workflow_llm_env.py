@@ -129,7 +129,7 @@ def test_daily_analysis_defaults_to_deepseek_v4_and_stable_search() -> None:
     env = _load_daily_analysis_env()
 
     assert env["LITELLM_MODEL"] == (
-        "${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-flash' }}"
+        "${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-pro' }}"
     )
     assert env["LITELLM_FALLBACK_MODELS"] == (
         "${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}"
@@ -151,7 +151,7 @@ def test_daily_analysis_defaults_to_deepseek_v4_and_stable_search() -> None:
 def test_network_smoke_uses_actions_runtime_env() -> None:
     for env in _load_network_smoke_envs():
         assert env["LITELLM_MODEL"] == (
-            "${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-flash' }}"
+            "${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-pro' }}"
         )
         assert env["LITELLM_FALLBACK_MODELS"] == (
             "${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}"

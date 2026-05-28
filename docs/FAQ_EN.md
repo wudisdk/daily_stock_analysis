@@ -212,7 +212,7 @@ First confirm whether `LITELLM_CONFIG` or `LLM_CHANNELS` is active, because eith
 # No need to configure GEMINI_API_KEY
 OPENAI_API_KEY=sk-xxxxxxxx
 OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_MODEL=deepseek-v4-pro
 # deepseek-chat / deepseek-reasoner remain compatible, but DeepSeek marks them deprecated after 2026/07/24
 ```
 

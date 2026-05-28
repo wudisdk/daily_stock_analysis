@@ -1187,7 +1187,6 @@ class Config:
 
         # LITELLM_MODEL: explicit config takes precedence; else infer from available keys
         litellm_model = os.getenv('LITELLM_MODEL', '').strip()
-        inferred_legacy_deepseek_model = False
         _openai_model_env = os.getenv('OPENAI_MODEL', '').strip()
         if using_anspire_llm_legacy:
             _openai_model_name = _anspire_llm_model_env or _openai_model_env or ANSPIRE_LLM_MODEL_DEFAULT
@@ -1201,8 +1200,7 @@ class Config:
             elif anthropic_api_keys:
                 litellm_model = f'anthropic/{_anthropic_model_name}'
             elif deepseek_api_keys:
-                litellm_model = 'deepseek/deepseek-chat'
-                inferred_legacy_deepseek_model = True
+                litellm_model = 'deepseek/deepseek-v4-pro'
             elif openai_api_keys:
                 # For openai-compatible models, add prefix only if not already prefixed
                 if '/' not in _openai_model_name:
@@ -1259,17 +1257,6 @@ class Config:
             )
             if llm_model_list:
                 llm_models_source = "legacy_env"
-
-        if (
-            inferred_legacy_deepseek_model
-            and llm_models_source == "legacy_env"
-            and litellm_model == 'deepseek/deepseek-chat'
-        ):
-            logger.warning(
-                "Deprecation warning:\n"
-                "deepseek-chat will be deprecated on 2026-07-24,\n"
-                "please migrate to deepseek-v4-flash."
-            )
 
         # Auto-infer LITELLM_MODEL from channels when not explicitly set
         if not litellm_model and llm_channels:
@@ -1454,7 +1441,7 @@ class Config:
             # Overall provider fallback order: Gemini > Anthropic > OpenAI-compatible (incl. AIHubmix).
             # base_url is auto-set to aihubmix.com/v1 when AIHUBMIX_KEY is used and no explicit
             # OPENAI_BASE_URL override is provided.
-            # Model names match upstream (e.g. gemini-3.1-pro-preview, gpt-5.5, deepseek-v4-flash).
+            # Model names match upstream (e.g. gemini-3.1-pro-preview, gpt-5.5, deepseek-v4-pro).
             openai_api_key=openai_api_keys[0] if openai_api_keys else None,
             openai_base_url=openai_base_url,
             openai_model=_openai_model_name,

@@ -643,8 +643,8 @@ class SystemConfigServiceTestCase(unittest.TestCase):
                 {"key": "LLM_DEEPSEEK_PROTOCOL", "value": "deepseek"},
                 {"key": "LLM_DEEPSEEK_BASE_URL", "value": "https://api.deepseek.com"},
                 {"key": "LLM_DEEPSEEK_API_KEY", "value": "sk-test-value"},
-                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-flash,deepseek-v4-pro"},
-                {"key": "LITELLM_MODEL", "value": "deepseek/deepseek-v4-flash"},
+                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-pro"},
+                {"key": "LITELLM_MODEL", "value": "deepseek/deepseek-v4-pro"},
             ]
         )
 
@@ -1549,21 +1549,21 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash",
+            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-pro",
             "LITELLM_MODEL=deepseek/deepseek-chat",
-            "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-flash",
+            "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro",
             "LLM_TEMPERATURE=0.42",
-            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-flash,cohere/command-r-plus",
+            "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,cohere/command-r-plus",
             "VISION_MODEL=deepseek/deepseek-chat",
         )
 
         response = self.service.update(
             config_version=self.manager.get_config_version(),
             items=[
-                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-flash"},
+                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-pro"},
                 {"key": "LITELLM_MODEL", "value": ""},
                 {"key": "AGENT_LITELLM_MODEL", "value": ""},
-                {"key": "LITELLM_FALLBACK_MODELS", "value": "deepseek/deepseek-v4-flash"},
+                {"key": "LITELLM_FALLBACK_MODELS", "value": "deepseek/deepseek-v4-pro"},
                 {"key": "VISION_MODEL", "value": ""},
             ],
             reload_now=False,
@@ -1577,7 +1577,7 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertEqual(current_map["VISION_MODEL"], "")
         self.assertEqual(
             current_map["LITELLM_FALLBACK_MODELS"],
-            "deepseek/deepseek-v4-flash",
+            "deepseek/deepseek-v4-pro",
         )
 
     @patch("litellm.completion")
@@ -2295,17 +2295,17 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash,deepseek-v4-pro",
+            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-pro",
             "LITELLM_MODEL=deepseek/deepseek-chat",
             "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro",
             "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-chat,cohere/command-r-plus",
-            "VISION_MODEL=deepseek/deepseek-v4-flash",
+            "VISION_MODEL=deepseek/deepseek-v4-pro",
         )
 
         response = self.service.update(
             config_version=self.manager.get_config_version(),
             items=[
-                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-flash,deepseek-v4-pro"},
+                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-pro"},
                 {"key": "LITELLM_MODEL", "value": ""},
                 {"key": "AGENT_LITELLM_MODEL", "value": ""},
                 {"key": "LITELLM_FALLBACK_MODELS", "value": "deepseek/deepseek-v4-pro,cohere/command-r-plus"},
@@ -2330,11 +2330,11 @@ class SystemConfigServiceTestCase(unittest.TestCase):
             "LLM_DEEPSEEK_PROTOCOL=deepseek",
             "LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com",
             "LLM_DEEPSEEK_API_KEY=sk-test-value",
-            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-flash,deepseek-v4-pro",
+            "LLM_DEEPSEEK_MODELS=deepseek-chat,deepseek-v4-pro",
             "LITELLM_MODEL=deepseek/deepseek-chat",
             "AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro",
             "LITELLM_FALLBACK_MODELS=deepseek/deepseek-v4-pro,deepseek/deepseek-chat,cohere/command-r-plus",
-            "VISION_MODEL=deepseek/deepseek-v4-flash",
+            "VISION_MODEL=deepseek/deepseek-v4-pro",
         )
 
         backup_content = self.service.export_desktop_env()["content"]
@@ -2343,10 +2343,10 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         clear_response = self.service.update(
             config_version=self.manager.get_config_version(),
             items=[
-                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-flash"},
+                {"key": "LLM_DEEPSEEK_MODELS", "value": "deepseek-v4-pro"},
                 {"key": "LITELLM_MODEL", "value": ""},
                 {"key": "AGENT_LITELLM_MODEL", "value": ""},
-                {"key": "LITELLM_FALLBACK_MODELS", "value": "deepseek/deepseek-v4-flash"},
+                {"key": "LITELLM_FALLBACK_MODELS", "value": "deepseek/deepseek-v4-pro"},
                 {"key": "VISION_MODEL", "value": ""},
             ],
             reload_now=False,
@@ -2357,7 +2357,7 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertEqual(cleared_map["LITELLM_MODEL"], "")
         self.assertEqual(cleared_map["AGENT_LITELLM_MODEL"], "")
         self.assertEqual(cleared_map["VISION_MODEL"], "")
-        self.assertEqual(cleared_map["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-v4-flash")
+        self.assertEqual(cleared_map["LITELLM_FALLBACK_MODELS"], "deepseek/deepseek-v4-pro")
 
         restore_payload = self.service.import_desktop_env(
             config_version=self.manager.get_config_version(),

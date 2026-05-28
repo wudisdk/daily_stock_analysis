@@ -66,8 +66,8 @@ LITELLM_MODEL=openai/deepseek-ai/DeepSeek-V3
 # 填入你在 DeepSeek 官方平台申请的 API Key
 DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
-*兼容提示：仅填这一行时，系统仍会默认使用 `deepseek/deepseek-chat` 并在日志提示迁移。*
-`deepseek-chat` / `deepseek-reasoner` 仍可用于兼容旧配置，但 DeepSeek 官方已标记为 2026/07/24 后废弃；新配置建议通过 Web 快速渠道或显式 `LITELLM_MODEL=deepseek/deepseek-v4-flash` 迁移到 `deepseek-v4-flash` / `deepseek-v4-pro`。
+*兼容提示：仅填这一行时，系统会默认使用 `deepseek/deepseek-v4-pro`。*
+`deepseek-chat` / `deepseek-reasoner` 仍可用于兼容旧配置，但 DeepSeek 官方已标记为 2026/07/24 后废弃；新配置建议通过 Web 快速渠道或显式 `LITELLM_MODEL=deepseek/deepseek-v4-pro` 迁移到 `deepseek-v4-pro`。
 
 ### 示例 3：使用 Gemini 免费 API
 ```env
@@ -156,7 +156,7 @@ LLM_CHANNELS=deepseek,aihubmix
 # 2. 渠道一：配置 DeepSeek 官方
 LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_DEEPSEEK_API_KEY=sk-1111111111111
-LLM_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro
+LLM_DEEPSEEK_MODELS=deepseek-v4-pro
 
 # 3. 渠道二：配置一个常用的聚合中转 API
 LLM_AIHUBMIX_BASE_URL=https://api.aihubmix.com/v1
@@ -165,7 +165,7 @@ LLM_AIHUBMIX_MODELS=gpt-5.5,claude-sonnet-4-6
 
 # 4. 【关键】指定主模型和备用模型列表
 # 平时首选用 deepseek 这款模型：
-LITELLM_MODEL=deepseek/deepseek-v4-flash
+LITELLM_MODEL=deepseek/deepseek-v4-pro
 # 可选：Agent 问股单独指定主模型（留空则继承主模型）
 AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro
 # 主模型崩了立刻挨个尝试下面这俩备用模型：
@@ -270,7 +270,7 @@ AGENT_CONTEXT_PROTECTED_TURNS=
 model_list:
   - model_name: my-smart-model
     litellm_params:
-      model: deepseek/deepseek-v4-flash
+      model: deepseek/deepseek-v4-pro
       api_base: https://api.deepseek.com
       api_key: "os.environ/MY_CUSTOM_SECRET_KEY"  # 从环境变量读取 Key，安全防泄漏
 

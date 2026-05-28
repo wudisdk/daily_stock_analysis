@@ -34,7 +34,7 @@ jobs:
         timeout-minutes: 8
         continue-on-error: true
         env:
-          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-flash' }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-pro' }}
           LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}
           LITELLM_TIMEOUT_SECONDS: ${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '90' }}
           LITELLM_LOG_LEVEL: ${{ vars.LITELLM_LOG_LEVEL || secrets.LITELLM_LOG_LEVEL || 'ERROR' }}
@@ -55,7 +55,7 @@ jobs:
         timeout-minutes: 10
         continue-on-error: true
         env:
-          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-flash' }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL || 'deepseek/deepseek-v4-pro' }}
           LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || 'deepseek/deepseek-v4-pro' }}
           LITELLM_TIMEOUT_SECONDS: ${{ vars.LITELLM_TIMEOUT_SECONDS || secrets.LITELLM_TIMEOUT_SECONDS || '90' }}
           LITELLM_LOG_LEVEL: ${{ vars.LITELLM_LOG_LEVEL || secrets.LITELLM_LOG_LEVEL || 'ERROR' }}

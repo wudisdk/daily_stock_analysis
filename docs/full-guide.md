@@ -63,7 +63,7 @@ daily_stock_analysis/
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key | 可选 |
 | `OPENAI_API_KEY` | OpenAI 兼容 API Key（支持 DeepSeek、通义千问等） | 可选 |
 | `OPENAI_BASE_URL` | OpenAI 兼容 API 地址（如 `https://api.deepseek.com`） | 可选 |
-| `OPENAI_MODEL` | 模型名称（如 `gemini-3.1-pro-preview`、`deepseek-v4-flash`、`gpt-5.5`） | 可选 |
+| `OPENAI_MODEL` | 模型名称（如 `gemini-3.1-pro-preview`、`deepseek-v4-pro`、`gpt-5.5`） | 可选 |
 
 > *注：以上模型 Key / 渠道至少配置一个；推荐优先从 Anspire 或 AIHubMix 这类一 Key 多模型服务开始。
 
@@ -1074,7 +1074,7 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 # OpenAI 兼容（备选）
 OPENAI_API_KEY=xxx
 OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-v4-flash
+OPENAI_MODEL=deepseek-v4-pro
 # deepseek-chat / deepseek-reasoner 仍兼容，但官方已标记为 2026/07/24 后废弃
 ```
 

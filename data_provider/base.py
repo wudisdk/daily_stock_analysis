@@ -1478,6 +1478,31 @@ class DataFetcherManager:
         is_us = is_us_index or _is_us_code(stock_code)
         is_hk = (not is_us) and _is_hk_market(stock_code)
 
+        if is_hk:
+            prefer_lb = self._longbridge_preferred()
+            hk_sources = (
+                ["LongbridgeFetcher", "YfinanceFetcher", "AkshareFetcher"]
+                if prefer_lb
+                else ["YfinanceFetcher", "LongbridgeFetcher", "AkshareFetcher"]
+            )
+            seen_sources = set()
+            for source_name in hk_sources:
+                if source_name in seen_sources:
+                    continue
+                seen_sources.add(source_name)
+                source_kw = {"source": "hk"} if source_name == "AkshareFetcher" else {}
+                quote = self._try_fetcher_quote(stock_code, source_name, **source_kw)
+                if quote is not None:
+                    logger.info(
+                        "[realtime_quote] HK %s success (source: %s)",
+                        stock_code,
+                        source_name,
+                    )
+                    return quote
+            if log_final_failure:
+                logger.info("[realtime_quote] HK %s no available data source", stock_code)
+            return None
+
         if is_us or is_hk:
             prefer_lb = self._longbridge_preferred() and not is_us_index
             if is_us:

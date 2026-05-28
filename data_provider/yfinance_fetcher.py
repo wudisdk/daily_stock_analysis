@@ -424,6 +424,28 @@ class YfinanceFetcher(BaseFetcher):
         """
         return is_us_stock_code(stock_code)
 
+    def _is_hk_stock(self, stock_code: str) -> bool:
+        """Return True for supported Hong Kong stock code forms."""
+        code = (stock_code or "").strip().upper()
+        if code.startswith("HK"):
+            digits = code[2:]
+            return digits.isdigit() and 1 <= len(digits) <= 5
+        if code.endswith(".HK"):
+            digits = code[:-3]
+            return digits.isdigit() and 1 <= len(digits) <= 5
+        return code.isdigit() and len(code) == 5
+
+    def _normalize_hk_stock_code(self, stock_code: str) -> str:
+        """Normalize HK code to the manager-level canonical HK00000 form."""
+        code = (stock_code or "").strip().upper()
+        if code.startswith("HK"):
+            digits = code[2:]
+        elif code.endswith(".HK"):
+            digits = code[:-3]
+        else:
+            digits = code
+        return f"HK{digits.zfill(5)}"
+
     def _get_us_stock_quote_from_stooq(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         使用 Stooq 为美股实时行情提供免密钥兜底。
@@ -685,13 +707,16 @@ class YfinanceFetcher(BaseFetcher):
             )
 
         # 仅处理美股股票
-        if not self._is_us_stock(stock_code):
+        is_hk_stock = self._is_hk_stock(stock_code)
+        if not self._is_us_stock(stock_code) and not is_hk_stock:
             logger.debug(f"[Yfinance] {stock_code} 不是美股，跳过")
             return None
 
         try:
-            symbol = stock_code.strip().upper()
-            logger.debug(f"[Yfinance] 获取美股 {symbol} 实时行情")
+            symbol = self._convert_stock_code(stock_code) if is_hk_stock else stock_code.strip().upper()
+            quote_code = self._normalize_hk_stock_code(stock_code) if is_hk_stock else symbol
+            market_label = "HK" if is_hk_stock else "US"
+            logger.debug(f"[Yfinance] Fetch {market_label} realtime quote for {symbol}")
 
             ticker = yf.Ticker(symbol)
 
@@ -714,6 +739,9 @@ class YfinanceFetcher(BaseFetcher):
                 logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
                 hist = ticker.history(period='2d')
                 if hist.empty:
+                    if is_hk_stock:
+                        logger.warning(f"[Yfinance] No data for HK symbol {symbol}")
+                        return None
                     logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据，尝试 Stooq 兜底")
                     return self._get_us_stock_quote_from_stooq(symbol)
 
@@ -743,12 +771,16 @@ class YfinanceFetcher(BaseFetcher):
             # 获取股票名称
             try:
                 info_name = ticker.info.get('shortName', '') or ticker.info.get('longName', '') or ''
-                name = info_name if is_meaningful_stock_name(info_name, symbol) else STOCK_NAME_MAP.get(symbol, '')
+                name = (
+                    info_name
+                    if is_meaningful_stock_name(info_name, quote_code)
+                    else STOCK_NAME_MAP.get(quote_code, STOCK_NAME_MAP.get(symbol, ''))
+                )
             except Exception:
-                name = STOCK_NAME_MAP.get(symbol, '')
+                name = STOCK_NAME_MAP.get(quote_code, STOCK_NAME_MAP.get(symbol, ''))
 
             quote = UnifiedRealtimeQuote(
-                code=symbol,
+                code=quote_code,
                 name=name,
                 source=RealtimeSource.FALLBACK,
                 price=price,
@@ -769,10 +801,13 @@ class YfinanceFetcher(BaseFetcher):
                 circ_mv=None,
             )
 
-            logger.info(f"[Yfinance] 获取美股 {symbol} 实时行情成功: 价格={price}")
+            logger.info(f"[Yfinance] Fetch {market_label} realtime quote for {symbol} succeeded: price={price}")
             return quote
 
         except Exception as e:
+            if is_hk_stock:
+                logger.warning(f"[Yfinance] Fetch HK realtime quote for {stock_code} failed: {e}")
+                return None
             logger.warning(f"[Yfinance] 获取美股 {stock_code} 实时行情失败: {e}，尝试 Stooq 兜底")
             return self._get_us_stock_quote_from_stooq(stock_code)
 

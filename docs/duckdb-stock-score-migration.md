@@ -18,6 +18,8 @@ not turn future returns into routine scoring inputs.
   - `DataFetcherManager.get_fundamental_context()` now merges the latest
     Tushare `fina_indicator` snapshot into the earnings/growth payloads when a
     Tushare token is available.
+  - Hong Kong realtime quote routing now tries YFinance before the slower
+    AkShare full-market backup, while still using AkShare as a final fallback.
 - `src/services/analysis_context_builder.py`
   - The `fundamentals` block now derives low-sensitivity capital-flow guard
     warnings from already fetched context. This is a hosted-workflow proxy for

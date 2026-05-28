@@ -10,6 +10,7 @@ data_provider/yfinance_fetcher 中港股指数获取逻辑的单元测试
 import sys
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import pandas as pd
 
@@ -242,6 +243,58 @@ class TestYfinanceNormalizeData(unittest.TestCase):
         self.assertIn("date", result.columns)
         self.assertIn("close", result.columns)
         self.assertEqual(list(result["volume"]), [1000, 1200])
+
+
+class TestYfinanceHKRealtimeQuote(unittest.TestCase):
+    """Realtime HK quote fallback tests."""
+
+    def setUp(self):
+        from data_provider.yfinance_fetcher import YfinanceFetcher
+
+        self.fetcher = YfinanceFetcher()
+
+    def test_get_realtime_quote_supports_hk_prefix_code(self):
+        mock_ticker = MagicMock()
+        mock_ticker.fast_info = SimpleNamespace(
+            lastPrice=10.5,
+            previousClose=10.0,
+            open=10.1,
+            dayHigh=10.8,
+            dayLow=9.9,
+            lastVolume=123456,
+            marketCap=1000000000,
+        )
+        mock_ticker.info = {"shortName": "Smoore Intl"}
+        mock_yf = MagicMock()
+        mock_yf.Ticker.return_value = mock_ticker
+
+        with patch.dict("sys.modules", {"yfinance": mock_yf}):
+            quote = self.fetcher.get_realtime_quote("HK01347")
+
+        self.assertIsNotNone(quote)
+        self.assertEqual(mock_yf.Ticker.call_args.args[0], "1347.HK")
+        self.assertEqual(quote.code, "HK01347")
+        self.assertEqual(quote.name, "Smoore Intl")
+        self.assertEqual(quote.price, 10.5)
+        self.assertEqual(quote.pre_close, 10.0)
+        self.assertEqual(quote.change_amount, 0.5)
+        self.assertEqual(quote.change_pct, 5.0)
+        self.assertEqual(quote.volume, 123456)
+        self.assertEqual(quote.total_mv, 1000000000)
+
+    def test_get_realtime_quote_supports_hk_suffix_code(self):
+        mock_ticker = MagicMock()
+        mock_ticker.fast_info = SimpleNamespace(lastPrice=38.2, previousClose=38.0)
+        mock_ticker.info = {}
+        mock_yf = MagicMock()
+        mock_yf.Ticker.return_value = mock_ticker
+
+        with patch.dict("sys.modules", {"yfinance": mock_yf}):
+            quote = self.fetcher.get_realtime_quote("1810.HK")
+
+        self.assertIsNotNone(quote)
+        self.assertEqual(mock_yf.Ticker.call_args.args[0], "1810.HK")
+        self.assertEqual(quote.code, "HK01810")
 
 
 if __name__ == '__main__':

@@ -118,7 +118,7 @@ def _build_snapshot_row(
         "query_id": _safe_text(getattr(result, "query_id", None)),
         "candidate_source": "daily_analysis",
         "candidate_rank": rank,
-        "trade_date": _safe_text(enhanced_context.get("date")),
+        "trade_date": _trade_date_from_context(enhanced_context),
         "stock_code": _stock_code(result),
         "stock_name": _safe_text(getattr(result, "name", None)),
         "report_language": _safe_text(getattr(result, "report_language", None)),
@@ -269,6 +269,30 @@ def _snapshot_file_date(rows: Sequence[Mapping[str, Any]], timestamp: str) -> st
         if trade_date:
             return trade_date.replace("-", "")
     return timestamp[:10].replace("-", "")
+
+
+def _trade_date_from_context(enhanced_context: Mapping[str, Any]) -> str:
+    for value in (
+        _nested_text(enhanced_context, "today", "date"),
+        _safe_text(enhanced_context.get("latest_daily_date")),
+        _safe_text(enhanced_context.get("daily_bar_date")),
+        _safe_text(enhanced_context.get("trade_date")),
+        _safe_text(enhanced_context.get("analysis_date")),
+        _safe_text(enhanced_context.get("date")),
+    ):
+        if value:
+            return value
+    return ""
+
+
+def _nested_text(mapping: Mapping[str, Any], *keys: str) -> str:
+    current: Any = mapping
+    for key in keys:
+        current_map = _mapping(current)
+        if not current_map:
+            return ""
+        current = current_map.get(key)
+    return _safe_text(current)
 
 
 def _numeric_score(result: Any) -> int:

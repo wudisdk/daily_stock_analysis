@@ -145,6 +145,28 @@ def test_build_snapshot_rows_uses_code_order_for_equal_scores_and_top_level_fall
     assert dimensions["fund_flow"]["status"] == "available"
 
 
+def test_build_snapshot_rows_prefers_latest_daily_bar_date_over_runtime_date(tmp_path) -> None:
+    result = _result("600519", 72)
+    enhanced = result.diagnostic_context_snapshot["enhanced_context"]
+    enhanced["date"] = "2026-05-29"
+    enhanced["today"]["date"] = "2026-05-28"
+
+    rows = build_ai_candidate_snapshot_rows(
+        [result],
+        created_at=datetime(2026, 5, 28, 16, 0, tzinfo=timezone.utc),
+    )
+
+    assert rows[0]["trade_date"] == "2026-05-28"
+    paths = write_ai_candidate_snapshot_files(
+        [result],
+        output_dir=tmp_path,
+        created_at=datetime(2026, 5, 28, 16, 0, tzinfo=timezone.utc),
+    )
+    assert "stock_ai_candidate_snapshot_20260528.jsonl" in {
+        path.name for path in paths
+    }
+
+
 def test_write_snapshot_files_writes_latest_and_trade_date_jsonl(tmp_path) -> None:
     paths = write_ai_candidate_snapshot_files(
         [_result()],

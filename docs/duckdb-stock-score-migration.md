@@ -48,6 +48,9 @@ not turn future returns into routine scoring inputs.
     ranked model outputs, factor labels/statuses, source coverage, warning
     codes, and news counts, while excluding news bodies, raw capital-flow
     amounts, risk text, secrets, and any future-return labels.
+  - Snapshot `trade_date` prefers the latest daily bar date over the workflow
+    wall-clock date, so delayed or manual runs after midnight do not mislabel
+    the as-of input date.
 - `.github/workflows/00-daily-analysis.yml`
   - The hosted daily workflow defaults to DeepSeek LiteLLM models and a
     Tushare-first realtime source order.

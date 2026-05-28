@@ -221,6 +221,10 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
         self.assertIn("多头", enhanced["ma_status"])
         self.assertEqual(enhanced["date"], today.isoformat())
         self.assertEqual(enhanced["today"]["date"], today.isoformat())
+        self.assertEqual(
+            enhanced["latest_daily_date"],
+            (today - timedelta(days=1)).isoformat(),
+        )
         self.assertEqual(enhanced["today"]["data_source"], "realtime:tencent")
         self.assertEqual(enhanced["today"]["realtime_source"], "tencent")
         self.assertIn("price_change_ratio", enhanced)
@@ -275,6 +279,10 @@ class TestEnhanceContextRealtimeOverride(unittest.TestCase):
         self.assertEqual(enhanced["today"]["amount"], 1327404280)
         self.assertEqual(enhanced["volume_change_ratio"], 0.56)
         self.assertEqual(enhanced["today"]["date"], today.isoformat())
+        self.assertEqual(
+            enhanced["latest_daily_date"],
+            (today - timedelta(days=1)).isoformat(),
+        )
         self.assertEqual(enhanced["today"]["data_source"], "realtime:tencent")
         self.assertEqual(enhanced["today"]["realtime_source"], "tencent")
         self.assertNotIn("dataSource", enhanced["today"])

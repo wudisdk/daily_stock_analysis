@@ -149,7 +149,8 @@ def test_build_snapshot_rows_prefers_latest_daily_bar_date_over_runtime_date(tmp
     result = _result("600519", 72)
     enhanced = result.diagnostic_context_snapshot["enhanced_context"]
     enhanced["date"] = "2026-05-29"
-    enhanced["today"]["date"] = "2026-05-28"
+    enhanced["today"]["date"] = "2026-05-29"
+    enhanced["latest_daily_date"] = "2026-05-28"
 
     rows = build_ai_candidate_snapshot_rows(
         [result],

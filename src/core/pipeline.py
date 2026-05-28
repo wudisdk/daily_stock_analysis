@@ -670,6 +670,15 @@ class StockAnalysisPipeline:
         """
         enhanced = context.copy()
         enhanced["report_language"] = normalize_report_language(getattr(self.config, "report_language", "zh"))
+        # Preserve the latest completed daily bar before realtime overlay rewrites today/date.
+        daily_bar_date = None
+        today_context = enhanced.get("today")
+        if isinstance(today_context, dict):
+            daily_bar_date = today_context.get("date")
+        if not daily_bar_date:
+            daily_bar_date = enhanced.get("date")
+        if daily_bar_date:
+            enhanced.setdefault("latest_daily_date", str(daily_bar_date).strip())
         
         # 添加股票名称
         if stock_name:

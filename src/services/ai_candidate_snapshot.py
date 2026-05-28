@@ -273,9 +273,9 @@ def _snapshot_file_date(rows: Sequence[Mapping[str, Any]], timestamp: str) -> st
 
 def _trade_date_from_context(enhanced_context: Mapping[str, Any]) -> str:
     for value in (
-        _nested_text(enhanced_context, "today", "date"),
         _safe_text(enhanced_context.get("latest_daily_date")),
         _safe_text(enhanced_context.get("daily_bar_date")),
+        _nested_text(enhanced_context, "today", "date"),
         _safe_text(enhanced_context.get("trade_date")),
         _safe_text(enhanced_context.get("analysis_date")),
         _safe_text(enhanced_context.get("date")),

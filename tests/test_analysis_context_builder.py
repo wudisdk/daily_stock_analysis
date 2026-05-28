@@ -410,6 +410,7 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
     assert dimensions["industry_theme"]["label"] == "theme_tailwind"
     assert dimensions["quality_growth"]["label"] == "available"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
+    assert dimensions["de_risk"]["label"] == "flow_broke_price_hot"
     assert dimensions["risk"]["label"] == "has_risk_flags"
     assert dimensions["confidence"]["label"] == "medium"
     assert "capital_flow_broke_proxy" in block.warnings
@@ -437,6 +438,37 @@ def test_factor_snapshot_marks_industry_theme_not_supported_without_board_payloa
     assert dimensions["industry_theme"]["missing_reason"] == "industry_theme_not_supported"
 
 
+def test_factor_snapshot_marks_clear_de_risk_when_flow_inputs_are_present() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1880.0,
+                "change_60d": 4.2,
+                "volume_ratio": 1.1,
+            },
+            fundamental_context={
+                "status": "ok",
+                "coverage": {"capital_flow": "ok"},
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": 1_000_000.0,
+                            "inflow_5d": 2_000_000.0,
+                        }
+                    },
+                },
+            },
+        )
+    ).blocks["factor_snapshot"]
+
+    dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
+    assert dimensions["fund_flow"]["label"] == "available"
+    assert dimensions["de_risk"]["label"] == "clear"
+
+
 def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:
     block = AnalysisContextBuilder.build(
         _artifacts(
@@ -450,6 +482,7 @@ def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:
     assert (
         block.items["technical_score"].missing_reason == "technical_score_missing"
     )
+    assert block.items["de_risk"].missing_reason == "de_risk_signal_missing"
     assert block.items["confidence"].missing_reason == "factor_snapshot_inputs_missing"
 
 

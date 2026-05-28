@@ -449,6 +449,7 @@ def _build_factor_snapshot_block(
             not_supported_reason="quality_growth_not_supported",
         ),
         _fund_flow_dimension(context, coverage, capital_flow_warnings),
+        _de_risk_dimension(context, coverage, capital_flow_warnings),
     ]
     dimensions.append(_risk_dimension(trend, dimensions, capital_flow_warnings))
     dimensions.append(_confidence_dimension(dimensions, capital_flow_warnings))
@@ -701,6 +702,72 @@ def _fund_flow_dimension(
     )
 
 
+def _de_risk_dimension(
+    context: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+    capital_flow_warnings: Sequence[str],
+) -> Dict[str, Any]:
+    warning_set = {warning for warning in capital_flow_warnings if warning}
+    has_flow_broke = _CAPITAL_FLOW_BROKE_PROXY_WARNING in warning_set
+    has_price_hot = _PRICE_FLOW_HOT_WITHOUT_INFLOW_WARNING in warning_set
+    has_flow_conflict = _CAPITAL_FLOW_CONFLICT_WARNING in warning_set
+
+    if has_flow_broke and has_price_hot:
+        label = "flow_broke_price_hot"
+    elif has_flow_broke:
+        label = "flow_broke"
+    elif has_flow_conflict and has_price_hot:
+        label = "flow_conflict_price_hot"
+    elif has_price_hot:
+        label = "price_flow_hot"
+    elif has_flow_conflict:
+        label = "flow_conflict"
+    elif _has_capital_flow_values(context):
+        label = "clear"
+    else:
+        return _missing_de_risk_dimension(context, coverage)
+
+    return _dimension(
+        "de_risk",
+        ContextFieldStatus.AVAILABLE,
+        label=label,
+        warnings=capital_flow_warnings,
+    )
+
+
+def _missing_de_risk_dimension(
+    context: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+) -> Dict[str, Any]:
+    coverage_status = _coverage_status(coverage.get("capital_flow"))
+    block = context.get("capital_flow") if isinstance(context, Mapping) else None
+    block_status = (
+        _coverage_status(block.get("status"))
+        if isinstance(block, Mapping)
+        else None
+    )
+    status_value = coverage_status or block_status
+    if status_value == "not_supported":
+        return _dimension(
+            "de_risk",
+            ContextFieldStatus.NOT_SUPPORTED,
+            label="not_supported",
+            missing_reason="de_risk_not_supported",
+        )
+    if status_value == "partial":
+        return _dimension(
+            "de_risk",
+            ContextFieldStatus.PARTIAL,
+            label="insufficient_flow",
+            missing_reason="de_risk_signal_partial",
+        )
+    return _dimension(
+        "de_risk",
+        ContextFieldStatus.MISSING,
+        missing_reason="de_risk_signal_missing",
+    )
+
+
 def _risk_dimension(
     trend: Mapping[str, Any],
     dimensions: Sequence[Mapping[str, Any]],
@@ -824,6 +891,14 @@ def _capital_flow_stock_flow(context: Mapping[str, Any]) -> Dict[str, Any]:
     data = block.get("data") if isinstance(block.get("data"), Mapping) else block
     stock_flow = data.get("stock_flow") if isinstance(data, Mapping) else None
     return dict(stock_flow) if isinstance(stock_flow, Mapping) else {}
+
+
+def _has_capital_flow_values(context: Mapping[str, Any]) -> bool:
+    stock_flow = _capital_flow_stock_flow(context)
+    return any(
+        _numeric_value(stock_flow.get(key)) is not None
+        for key in ("main_net_inflow", "inflow_5d", "inflow_10d")
+    )
 
 
 def _numeric_value(value: Any) -> Optional[float]:

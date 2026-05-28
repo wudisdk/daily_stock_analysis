@@ -33,9 +33,11 @@ not turn future returns into routine scoring inputs.
   - The `factor_snapshot` block now compresses existing quote, technical, and
     fundamental artifacts into DuckDB-style as-of dimensions: technical score
     band, price heat, volume-price activity, valuation coverage,
-    quality/growth coverage, fund-flow guard status, risk flag status, and
-    confidence. It also maps fetched board membership/sector rankings into a
-    low-sensitivity `industry_theme` label, mirroring the DuckDB
+    quality/growth coverage, fund-flow guard status, a deterministic
+    `de_risk` label for `flow_broke` / `price_flow_hot` style guardrails,
+    risk flag status, and confidence. It also maps fetched board
+    membership/sector rankings into a low-sensitivity `industry_theme` label,
+    mirroring the DuckDB
     `industry_theme_score` idea without dumping raw board lists. The prompt
     renderer only exposes whitelisted labels and statuses, not raw factor
     payloads or future-return labels.
@@ -79,8 +81,8 @@ not turn future returns into routine scoring inputs.
    fetched safely: institution ownership and de-risk flags.
 2. Let DeepSeek optionally read the fixed candidate snapshot in later stages
    instead of re-querying mutable context.
-3. Extend the current `flow_broke` prompt guard into a deterministic
-   `factor_snapshot` de-risk flag after sample-out, turnover, cost, and
-   drawdown checks.
+3. Calibrate the deterministic `de_risk` flag against sample-out, turnover,
+   cost, and drawdown checks before allowing it to change any downstream
+   ranking or recommendation logic.
 4. Add a separate validation workflow that writes model/rating/outcome summaries
    without changing the daily recommendation path.

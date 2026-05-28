@@ -30,6 +30,7 @@ from src.agent.llm_adapter import (
 from src.agent.skills.defaults import CORE_TRADING_SKILL_POLICY_ZH
 from src.config import (
     Config,
+    _uses_direct_env_provider,
     extra_litellm_params,
     get_api_keys_for_model,
     get_config,
@@ -2022,12 +2023,12 @@ class GeminiAnalyzer:
     def _init_litellm(self) -> None:
         """Initialize litellm Router from channels / YAML / legacy keys."""
         config = self._get_runtime_config()
+        self._legacy_router_model_list = []
+        self._litellm_available = False
         litellm_model = config.litellm_model
         if not litellm_model:
             logger.warning("Analyzer LLM: LITELLM_MODEL not configured")
             return
-
-        self._litellm_available = True
 
         # --- Channel / YAML path: build Router from pre-built model_list ---
         if self._has_channel_config(config):
@@ -2042,6 +2043,7 @@ class GeminiAnalyzer:
                 logger.debug("Analyzer LLM: Router constructor signature not compatible; fallback to direct mode")
                 self._router = None
             else:
+                self._litellm_available = True
                 unique_models = list(dict.fromkeys(
                     e['litellm_params']['model'] for e in model_list
                 ))
@@ -2091,14 +2093,22 @@ class GeminiAnalyzer:
                     f"Analyzer LLM: Legacy Router initialized with {len(legacy_model_list)} keys "
                     f"for {litellm_model}"
                 )
+                self._litellm_available = True
                 return
 
         if keys:
+            self._litellm_available = True
             logger.info(f"Analyzer LLM: litellm initialized (model={litellm_model})")
-        else:
+        elif _uses_direct_env_provider(litellm_model):
+            self._litellm_available = True
             logger.info(
                 f"Analyzer LLM: litellm initialized (model={litellm_model}, "
                 f"API key from environment)"
+            )
+        else:
+            logger.warning(
+                "Analyzer LLM: API key not configured for managed provider model=%s",
+                litellm_model,
             )
 
     def is_available(self) -> bool:
@@ -2126,6 +2136,8 @@ class GeminiAnalyzer:
         keys = get_api_keys_for_model(model, config)
         if keys:
             effective_kwargs["api_key"] = keys[0]
+        elif not _uses_direct_env_provider(model):
+            raise RuntimeError(f"API key not configured for {model}")
         effective_kwargs.update(extra_litellm_params(model, config))
         return litellm.completion(**effective_kwargs)
 
@@ -2490,6 +2502,10 @@ class GeminiAnalyzer:
         Returns:
             Response text, or None if the LLM call fails (error is logged).
         """
+        if not self.is_available():
+            logger.warning("[generate_text] LLM unavailable; API key is not configured")
+            return None
+
         try:
             result = self._call_litellm(
                 prompt,

@@ -2522,6 +2522,101 @@ class DataFetcherManager:
             **blocks,
         }
 
+    def _get_tushare_fina_indicator_snapshot(
+        self,
+        stock_code: str,
+        timeout_seconds: float,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str], int]:
+        """Fetch a fail-open Tushare fina_indicator snapshot for CN stocks."""
+        if timeout_seconds <= 0:
+            return None, "fundamental stage timeout", 0
+
+        fetcher = self._get_fetcher_by_name("TushareFetcher", capability="fundamental_context")
+        if fetcher is None or not hasattr(fetcher, "get_fina_indicator_snapshot"):
+            return None, None, 0
+
+        return self._run_with_retry(
+            lambda: self._call_fetcher_method(
+                fetcher,
+                "get_fina_indicator_snapshot",
+                stock_code,
+            ),
+            timeout_seconds,
+            "tushare_fina_indicator",
+        )
+
+    @staticmethod
+    def _merge_tushare_fina_indicator_snapshot(
+        earnings_payload: Dict[str, Any],
+        growth_payload: Dict[str, Any],
+        snapshot: Dict[str, Any],
+    ) -> bool:
+        """Merge point-in-time Tushare financial metrics into prompt payloads."""
+        latest = snapshot.get("latest") if isinstance(snapshot, dict) else None
+        if not isinstance(latest, dict):
+            return False
+
+        financial_report = earnings_payload.get("financial_report")
+        if not isinstance(financial_report, dict):
+            financial_report = {}
+        else:
+            financial_report = dict(financial_report)
+
+        field_map = {
+            "report_date": "end_date",
+            "announcement_date": "ann_date",
+            "roe": "roe",
+            "roe_waa": "roe_waa",
+            "roa": "roa",
+            "roic": "roic",
+            "grossprofit_margin": "grossprofit_margin",
+            "netprofit_margin": "netprofit_margin",
+            "debt_to_assets": "debt_to_assets",
+            "ocf_to_or": "ocf_to_or",
+            "ocf_to_profit": "ocf_to_profit",
+            "q_sales_yoy": "q_sales_yoy",
+            "q_netprofit_yoy": "q_netprofit_yoy",
+        }
+        for target, source in field_map.items():
+            value = latest.get(source)
+            if value is not None:
+                financial_report[target] = value
+
+        financial_report["source"] = snapshot.get("source", "tushare.fina_indicator")
+        financial_report["point_in_time_filter"] = snapshot.get(
+            "point_in_time_filter",
+            "ann_date <= asof_date",
+        )
+        financial_report["asof_date"] = snapshot.get("asof_date")
+        earnings_payload["financial_report"] = financial_report
+
+        recent = snapshot.get("recent")
+        if isinstance(recent, list) and recent:
+            earnings_payload["fina_indicator_recent"] = recent[:4]
+
+        growth_snapshot = {
+            key: latest.get(key)
+            for key in (
+                "q_sales_yoy",
+                "q_op_yoy",
+                "q_netprofit_yoy",
+                "q_netprofit_qoq",
+                "q_gr_yoy",
+                "q_profit_yoy",
+                "q_profit_qoq",
+            )
+            if latest.get(key) is not None
+        }
+        if growth_snapshot:
+            growth_snapshot["source"] = snapshot.get("source", "tushare.fina_indicator")
+            growth_snapshot["point_in_time_filter"] = snapshot.get(
+                "point_in_time_filter",
+                "ann_date <= asof_date",
+            )
+            growth_payload["fina_indicator_growth"] = growth_snapshot
+
+        return True
+
     def get_fundamental_context(
         self,
         stock_code: str,
@@ -2675,6 +2770,29 @@ class DataFetcherManager:
         else:
             institution_payload = dict(institution_payload)
 
+        tushare_fina_errors: List[str] = []
+        tushare_fina_chain: List[Dict[str, Any]] = []
+        if market == "cn" and not is_etf and remaining_seconds > 0:
+            fina_timeout = min(fetch_timeout, remaining_seconds)
+            fina_payload, fina_err, fina_ms = self._get_tushare_fina_indicator_snapshot(
+                stock_code,
+                fina_timeout,
+            )
+            _consume_budget(fina_ms)
+            if isinstance(fina_payload, dict) and self._merge_tushare_fina_indicator_snapshot(
+                earnings_payload,
+                growth_payload,
+                fina_payload,
+            ):
+                tushare_fina_chain = self._normalize_source_chain(
+                    [{"provider": "tushare.fina_indicator", "result": "ok", "duration_ms": fina_ms}],
+                    "tushare.fina_indicator",
+                    "ok",
+                    fina_ms,
+                )
+            elif fina_err:
+                tushare_fina_errors.append(fina_err)
+
         # Derive TTM dividend yield from already-fetched quote price; avoid extra quote calls.
         earnings_extra_errors: List[str] = []
         dividend_payload = earnings_payload.get("dividend")
@@ -2712,24 +2830,30 @@ class DataFetcherManager:
         adapter_errors = list(bundle_payload.get("errors", [])) if isinstance(bundle_payload, dict) else []
         adapter_errors.extend(bundle_errors)
         growth_errors = list(adapter_errors)
+        growth_errors.extend(tushare_fina_errors)
         earnings_errors = list(adapter_errors)
         earnings_errors.extend(earnings_extra_errors)
+        earnings_errors.extend(tushare_fina_errors)
         institution_errors = list(adapter_errors)
 
         growth_status = self._infer_block_status(growth_payload, bundle_status)
         earnings_status = self._infer_block_status(earnings_payload, bundle_status)
         institution_status = self._infer_block_status(institution_payload, bundle_status)
+        growth_chain = list(bundle_chain)
+        growth_chain.extend(tushare_fina_chain)
+        earnings_chain = list(bundle_chain)
+        earnings_chain.extend(tushare_fina_chain)
 
         result_ctx["growth"] = self._build_fundamental_block(
             growth_status,
             growth_payload,
-            bundle_chain,
+            growth_chain,
             growth_errors,
         )
         result_ctx["earnings"] = self._build_fundamental_block(
             earnings_status,
             earnings_payload,
-            bundle_chain,
+            earnings_chain,
             earnings_errors,
         )
         result_ctx["institution"] = self._build_fundamental_block(

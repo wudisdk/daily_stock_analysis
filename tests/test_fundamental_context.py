@@ -38,6 +38,17 @@ class _DummyBoardFetcher:
         return self._boards
 
 
+class _DummyTushareFinaFetcher:
+    name = "TushareFetcher"
+    priority = -1
+
+    def __init__(self, snapshot):
+        self._snapshot = snapshot
+
+    def get_fina_indicator_snapshot(self, _stock_code: str):
+        return self._snapshot
+
+
 class TestFundamentalContext(unittest.TestCase):
     def test_offshore_market_returns_not_supported_when_adapter_empty(self) -> None:
         """When yfinance adapter has no data, offshore (US/HK) status is not_supported.
@@ -335,6 +346,70 @@ class TestFundamentalContext(unittest.TestCase):
         dividend_payload = ctx["earnings"]["data"]["dividend"]
         self.assertIsNone(dividend_payload.get("ttm_dividend_yield_pct"))
         self.assertIn("invalid_price_for_ttm_dividend_yield", ctx["earnings"]["errors"])
+
+    def test_fundamental_context_merges_tushare_fina_indicator_point_in_time(self) -> None:
+        snapshot = {
+            "source": "tushare.fina_indicator",
+            "asof_date": "20260330",
+            "point_in_time_filter": "ann_date <= asof_date",
+            "latest": {
+                "ann_date": "20260329",
+                "end_date": "20251231",
+                "roe": 28.5,
+                "grossprofit_margin": 91.5,
+                "netprofit_margin": 52.1,
+                "debt_to_assets": 18.2,
+                "ocf_to_profit": 1.15,
+                "q_sales_yoy": 8.1,
+                "q_netprofit_yoy": 9.3,
+            },
+            "recent": [
+                {"ann_date": "20260329", "end_date": "20251231", "roe": 28.5},
+                {"ann_date": "20251030", "end_date": "20250930", "roe": 21.1},
+            ],
+        }
+        manager = DataFetcherManager(fetchers=[_DummyTushareFinaFetcher(snapshot)])
+        cfg = SimpleNamespace(
+            enable_fundamental_pipeline=True,
+            fundamental_cache_ttl_seconds=120,
+            fundamental_stage_timeout_seconds=1.5,
+            fundamental_fetch_timeout_seconds=0.8,
+            fundamental_retry_max=1,
+        )
+        quote = SimpleNamespace(
+            price=50.0,
+            pe_ratio=12.3,
+            pb_ratio=2.1,
+            total_mv=1.0e11,
+            circ_mv=7.0e10,
+            source=SimpleNamespace(value="tushare"),
+        )
+        with patch("src.config.get_config", return_value=cfg), \
+                patch.object(manager, "get_realtime_quote", return_value=quote), \
+                patch("data_provider.fundamental_adapter.AkshareFundamentalAdapter.get_fundamental_bundle", return_value={
+                    "status": "partial",
+                    "growth": {},
+                    "earnings": {},
+                    "institution": {},
+                    "source_chain": [],
+                    "errors": [],
+                }), \
+                patch.object(manager, "get_capital_flow_context", return_value={"status": "not_supported", "source_chain": []}), \
+                patch.object(manager, "get_dragon_tiger_context", return_value={"status": "not_supported", "source_chain": []}), \
+                patch.object(manager, "get_board_context", return_value={"status": "not_supported", "source_chain": []}):
+            ctx = manager.get_fundamental_context("600519", budget_seconds=1.5)
+
+        report = ctx["earnings"]["data"]["financial_report"]
+        self.assertEqual(report["report_date"], "20251231")
+        self.assertEqual(report["announcement_date"], "20260329")
+        self.assertAlmostEqual(report["roe"], 28.5)
+        self.assertAlmostEqual(report["grossprofit_margin"], 91.5)
+        self.assertEqual(report["source"], "tushare.fina_indicator")
+        self.assertEqual(report["point_in_time_filter"], "ann_date <= asof_date")
+        self.assertEqual(ctx["growth"]["data"]["fina_indicator_growth"]["q_sales_yoy"], 8.1)
+        self.assertTrue(
+            any(item.get("provider") == "tushare.fina_indicator" for item in ctx["earnings"]["source_chain"])
+        )
 
     def test_non_etf_board_budget_not_forced_to_zero(self) -> None:
         manager = DataFetcherManager(fetchers=[])

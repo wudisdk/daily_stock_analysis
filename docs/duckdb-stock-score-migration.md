@@ -14,6 +14,10 @@ not turn future returns into routine scoring inputs.
   - Tushare realtime quotes now use `daily_basic` to fill missing
     `volume_ratio`, `turnover_rate`, `pe_ratio`, `pb_ratio`, `total_mv`, and
     `circ_mv`.
+- `data_provider/base.py`
+  - `DataFetcherManager.get_fundamental_context()` now merges the latest
+    Tushare `fina_indicator` snapshot into the earnings/growth payloads when a
+    Tushare token is available.
 - `.github/workflows/00-daily-analysis.yml`
   - The hosted daily workflow defaults to DeepSeek LiteLLM models and a
     Tushare-first realtime source order.
@@ -43,16 +47,13 @@ not turn future returns into routine scoring inputs.
 
 ## Next Implementation Milestones
 
-1. Wire `get_fina_indicator_snapshot()` into `DataFetcherManager.get_fundamental_context()`
-   as an optional Tushare financial-quality supplement.
-2. Add a compact `factor_snapshot` block to `AnalysisContextPack` using only
+1. Add a compact `factor_snapshot` block to `AnalysisContextPack` using only
    as-of fields: valuation, quality, growth, momentum, volume-price,
    fund-flow, risk, and confidence.
-3. Add a small candidate snapshot export path for GitHub Actions artifacts, then
+2. Add a small candidate snapshot export path for GitHub Actions artifacts, then
    let DeepSeek read that fixed snapshot instead of re-querying mutable context.
-4. Convert DuckDB `flow_broke` into a candidate de-risk flag, then validate it
+3. Convert DuckDB `flow_broke` into a candidate de-risk flag, then validate it
    with sample-out, turnover, cost, and drawdown checks before using it in
    routine wording.
-5. Add a separate validation workflow that writes model/rating/outcome summaries
+4. Add a separate validation workflow that writes model/rating/outcome summaries
    without changing the daily recommendation path.
-

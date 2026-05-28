@@ -91,10 +91,12 @@ def _build_snapshot_row(
 ) -> Dict[str, Any]:
     snapshot = _mapping(getattr(result, "diagnostic_context_snapshot", None))
     enhanced_context = _mapping(snapshot.get("enhanced_context"))
+    news_result_count = _int_or_none(snapshot.get("news_result_count"))
     factor_snapshot, data_coverage = _derive_factor_snapshot(
         result,
         snapshot,
         enhanced_context,
+        news_result_count=news_result_count,
     )
     model_result = {
         "sentiment_score": _numeric_or_none(getattr(result, "sentiment_score", None)),
@@ -124,7 +126,7 @@ def _build_snapshot_row(
         "model_result": model_result,
         "factor_snapshot": factor_snapshot,
         "data_coverage": data_coverage,
-        "news_result_count": _int_or_none(snapshot.get("news_result_count")),
+        "news_result_count": news_result_count,
     }
     return {
         key: value
@@ -137,6 +139,8 @@ def _derive_factor_snapshot(
     result: Any,
     snapshot: Mapping[str, Any],
     enhanced_context: Mapping[str, Any],
+    *,
+    news_result_count: Optional[int],
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
     stock_code = _stock_code(result)
     stock_name = _safe_text(getattr(result, "name", None))
@@ -166,7 +170,7 @@ def _derive_factor_snapshot(
         chip_data=dict(_mapping(snapshot.get("chip_distribution_raw"))) or None,
         fundamental_context=dict(fundamental_context) if fundamental_context else None,
         news_context=None,
-        news_result_count=_int_or_none(snapshot.get("news_result_count")),
+        news_result_count=news_result_count,
         metadata={
             "query_id": _safe_text(getattr(result, "query_id", None)),
             "trigger_source": "ai_candidate_snapshot",
@@ -193,7 +197,25 @@ def _derive_factor_snapshot(
             "news",
         )
     }
+    _mark_news_coverage_from_count(data_coverage, news_result_count)
     return _drop_empty(factor_snapshot), _drop_empty(data_coverage)
+
+
+def _mark_news_coverage_from_count(
+    data_coverage: Dict[str, Dict[str, Any]],
+    news_result_count: Optional[int],
+) -> None:
+    if not news_result_count or news_result_count <= 0:
+        return
+
+    news_summary = data_coverage.get("news") or {}
+    warnings = _safe_string_list(news_summary.get("warnings"))
+    if "news_content_omitted_low_sensitivity" not in warnings:
+        warnings.append("news_content_omitted_low_sensitivity")
+    data_coverage["news"] = {
+        "status": "available",
+        "warnings": warnings,
+    }
 
 
 def _block_quality_summary(block: Any) -> Dict[str, Any]:

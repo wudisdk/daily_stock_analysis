@@ -96,6 +96,8 @@ def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None
     assert dimensions["price_heat"]["label"] == "overheated"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
     assert rows[0]["data_coverage"]["factor_snapshot"]["status"] == "available"
+    assert rows[0]["data_coverage"]["news"]["status"] == "available"
+    assert "news_content_omitted_low_sensitivity" in rows[0]["data_coverage"]["news"]["warnings"]
     assert rows[0]["news_result_count"] == 4
 
     dumped = json.dumps(rows, ensure_ascii=False)

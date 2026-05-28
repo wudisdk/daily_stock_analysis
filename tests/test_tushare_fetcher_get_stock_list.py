@@ -98,6 +98,42 @@ class TestTushareFetcherGetStockList(unittest.TestCase):
 
         self.assertIsNone(df)
 
+    def test_get_belong_board_uses_stock_basic_industry_and_market(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.stock_basic.return_value = pd.DataFrame(
+            {
+                "ts_code": ["600519.SH"],
+                "name": ["Kweichow Moutai"],
+                "industry": ["Baijiu"],
+                "market": ["Main Board"],
+            }
+        )
+
+        with patch.object(fetcher, "_check_rate_limit") as rate_limit:
+            boards = fetcher.get_belong_board("600519")
+            cached_boards = fetcher.get_belong_board("600519")
+
+        self.assertEqual(
+            boards,
+            [
+                {"name": "Baijiu", "type": "industry"},
+                {"name": "Main Board", "type": "market"},
+            ],
+        )
+        self.assertEqual(cached_boards, boards)
+        fetcher._api.stock_basic.assert_called_once_with(
+            ts_code="600519.SH",
+            fields="ts_code,name,industry,market",
+        )
+        rate_limit.assert_called_once()
+
+    def test_get_belong_board_skips_non_a_share_codes(self) -> None:
+        fetcher = self._make_fetcher()
+
+        self.assertIsNone(fetcher.get_belong_board("HK00981"))
+        self.assertIsNone(fetcher.get_belong_board("159915"))
+        self.assertFalse(fetcher._api.stock_basic.called)
+
 
 class TestTushareFetcherFetchRawData(unittest.TestCase):
     """TushareFetcher._fetch_raw_data: API routing and error handling."""

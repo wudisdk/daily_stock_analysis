@@ -711,6 +711,48 @@ class TushareFetcher(BaseFetcher):
 
         return None
     
+    def get_belong_board(self, stock_code: str) -> Optional[List[Dict[str, str]]]:
+        """Return lightweight A-share industry membership from stock_basic."""
+        if self._api is None:
+            return None
+        if _is_hk_market(stock_code) or _is_etf_code(stock_code):
+            return None
+
+        normalized_code = normalize_stock_code(stock_code)
+        cache = getattr(self, "_stock_basic_board_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._stock_basic_board_cache = cache
+        if normalized_code in cache:
+            return cache[normalized_code]
+
+        try:
+            ts_code = self._convert_stock_code(normalized_code)
+            df = self._call_api_with_rate_limit(
+                "stock_basic",
+                ts_code=ts_code,
+                fields="ts_code,name,industry,market",
+            )
+            if df is None or df.empty:
+                cache[normalized_code] = []
+                return None
+
+            row = df.iloc[0]
+            boards: List[Dict[str, str]] = []
+            for field, board_type in (("industry", "industry"), ("market", "market")):
+                value = row.get(field)
+                if value is None or pd.isna(value):
+                    continue
+                text = str(value).strip()
+                if text:
+                    boards.append({"name": text, "type": board_type})
+
+            cache[normalized_code] = boards
+            return boards or None
+        except Exception as e:
+            logger.debug("Tushare stock_basic board fallback failed %s: %s", stock_code, e)
+            return None
+
     def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取实时行情

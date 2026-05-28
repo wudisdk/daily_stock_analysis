@@ -439,6 +439,23 @@ def test_factor_snapshot_marks_industry_theme_not_supported_without_board_payloa
     assert dimensions["industry_theme"]["missing_reason"] == "industry_theme_not_supported"
 
 
+def test_factor_snapshot_marks_industry_theme_from_membership_only() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            fundamental_context={
+                "status": "partial",
+                "coverage": {"boards": "failed"},
+                "belong_boards": [{"name": "Semiconductors", "type": "industry"}],
+                "boards": {"status": "failed", "data": {}},
+            },
+        )
+    ).blocks["factor_snapshot"]
+
+    dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
+    assert dimensions["industry_theme"]["status"] == "available"
+    assert dimensions["industry_theme"]["label"] == "membership_available"
+
+
 def test_factor_snapshot_marks_clear_de_risk_when_flow_inputs_are_present() -> None:
     block = AnalysisContextBuilder.build(
         _artifacts(

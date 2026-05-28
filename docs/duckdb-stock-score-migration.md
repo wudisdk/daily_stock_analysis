@@ -11,6 +11,9 @@ not turn future returns into routine scoring inputs.
     `daily_basic` row for A-share stocks.
   - `get_fina_indicator_snapshot()` fetches recent `fina_indicator` rows using
     the point-in-time filter `ann_date <= asof_date`.
+  - `get_belong_board()` now uses the lightweight `stock_basic` industry and
+    market fields as an A-share board-membership fallback before slower
+    third-party board endpoints.
   - Tushare realtime quotes now use `daily_basic` to fill missing
     `volume_ratio`, `turnover_rate`, `pe_ratio`, `pb_ratio`, `total_mv`, and
     `circ_mv`.

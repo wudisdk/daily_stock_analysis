@@ -435,6 +435,7 @@ def _build_factor_snapshot_block(
         _technical_score_dimension(trend),
         _price_heat_dimension(trend, quote),
         _volume_price_dimension(trend, quote),
+        _industry_theme_dimension(context, coverage),
         _coverage_dimension(
             "valuation",
             [coverage.get("valuation")],
@@ -592,6 +593,47 @@ def _volume_price_dimension(
     return _dimension("volume_price", ContextFieldStatus.AVAILABLE, label=label)
 
 
+def _industry_theme_dimension(
+    context: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+) -> Dict[str, Any]:
+    belong_names = _board_names(context.get("belong_boards"))
+    boards_block = context.get("boards") if isinstance(context, Mapping) else None
+    boards_data = (
+        boards_block.get("data")
+        if isinstance(boards_block, Mapping) and isinstance(boards_block.get("data"), Mapping)
+        else {}
+    )
+    top_names = _board_names(boards_data.get("top"))
+    bottom_names = _board_names(boards_data.get("bottom"))
+    board_status = _coverage_status(coverage.get("boards"))
+    if not board_status and isinstance(boards_block, Mapping):
+        board_status = _coverage_status(boards_block.get("status"))
+
+    if belong_names & top_names:
+        return _dimension("industry_theme", ContextFieldStatus.AVAILABLE, label="theme_tailwind")
+    if belong_names & bottom_names:
+        return _dimension("industry_theme", ContextFieldStatus.AVAILABLE, label="theme_headwind")
+    if belong_names and (top_names or bottom_names):
+        return _dimension("industry_theme", ContextFieldStatus.AVAILABLE, label="theme_neutral")
+    if belong_names:
+        return _dimension("industry_theme", ContextFieldStatus.AVAILABLE, label="membership_available")
+    if top_names or bottom_names:
+        return _dimension("industry_theme", ContextFieldStatus.PARTIAL, label="market_theme_available")
+    if board_status == "not_supported":
+        return _dimension(
+            "industry_theme",
+            ContextFieldStatus.NOT_SUPPORTED,
+            label="not_supported",
+            missing_reason="industry_theme_not_supported",
+        )
+    return _dimension(
+        "industry_theme",
+        ContextFieldStatus.MISSING,
+        missing_reason="industry_theme_snapshot_missing",
+    )
+
+
 def _coverage_dimension(
     name: str,
     values: Sequence[Any],
@@ -700,6 +742,24 @@ def _confidence_dimension(
             missing_reason="factor_snapshot_inputs_missing",
         )
     return _dimension("confidence", ContextFieldStatus.AVAILABLE, label=label)
+
+
+def _board_names(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    names: set[str] = set()
+    for item in value:
+        item_map = item if isinstance(item, Mapping) else {}
+        name = (
+            item_map.get("name")
+            or item_map.get("board_name")
+            or item_map.get("板块名称")
+            or item_map.get("industry")
+        )
+        name_text = str(name or "").strip().lower()
+        if name_text:
+            names.add(name_text)
+    return names
 
 
 def _dimension(

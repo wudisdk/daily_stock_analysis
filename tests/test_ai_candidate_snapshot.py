@@ -51,8 +51,17 @@ def _result(code: str = "600519", score: int = 72) -> SimpleNamespace:
                         "growth": "partial",
                         "earnings": "ok",
                         "capital_flow": "ok",
+                        "boards": "ok",
                     },
                     "source_chain": [{"provider": "fundamental_pipeline"}],
+                    "belong_boards": [{"name": "半导体", "type": "行业"}],
+                    "boards": {
+                        "status": "ok",
+                        "data": {
+                            "top": [{"name": "半导体", "change_pct": 2.5}],
+                            "bottom": [],
+                        },
+                    },
                     "capital_flow": {
                         "status": "ok",
                         "data": {
@@ -94,6 +103,7 @@ def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None
     }
     assert dimensions["technical_score"]["label"] == "strong"
     assert dimensions["price_heat"]["label"] == "overheated"
+    assert dimensions["industry_theme"]["label"] == "theme_tailwind"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
     assert rows[0]["data_coverage"]["factor_snapshot"]["status"] == "available"
     assert rows[0]["data_coverage"]["news"]["status"] == "available"
@@ -106,6 +116,7 @@ def test_build_snapshot_rows_exports_ranked_low_sensitivity_dimensions() -> None
     assert "1000000" not in dumped
     assert "raw risk text" not in dumped
     assert "should-redact" not in dumped
+    assert "半导体" not in dumped
 
 
 def test_build_snapshot_rows_uses_code_order_for_equal_scores_and_top_level_fallbacks() -> None:

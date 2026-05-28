@@ -375,8 +375,17 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
                     "growth": "partial",
                     "earnings": "ok",
                     "capital_flow": "ok",
+                    "boards": "ok",
                 },
                 "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "belong_boards": [{"name": "半导体", "type": "行业"}],
+                "boards": {
+                    "status": "ok",
+                    "data": {
+                        "top": [{"name": "半导体", "change_pct": 2.5}],
+                        "bottom": [{"name": "煤炭", "change_pct": -1.5}],
+                    },
+                },
                 "capital_flow": {
                     "status": "ok",
                     "data": {
@@ -398,6 +407,7 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
     assert dimensions["technical_score"]["label"] == "constructive"
     assert dimensions["price_heat"]["label"] == "overheated"
     assert dimensions["volume_price"]["label"] == "high_activity"
+    assert dimensions["industry_theme"]["label"] == "theme_tailwind"
     assert dimensions["quality_growth"]["label"] == "available"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
     assert dimensions["risk"]["label"] == "has_risk_flags"
@@ -408,6 +418,23 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
     dumped = str(block.model_dump(mode="json"))
     assert "1000000" not in dumped
     assert "raw risk text" not in dumped
+    assert "半导体" not in dumped
+
+
+def test_factor_snapshot_marks_industry_theme_not_supported_without_board_payload() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            fundamental_context={
+                "status": "partial",
+                "coverage": {"boards": "not_supported"},
+                "boards": {"status": "not_supported", "data": {}},
+            },
+        )
+    ).blocks["factor_snapshot"]
+
+    dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
+    assert dimensions["industry_theme"]["status"] == "not_supported"
+    assert dimensions["industry_theme"]["missing_reason"] == "industry_theme_not_supported"
 
 
 def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:

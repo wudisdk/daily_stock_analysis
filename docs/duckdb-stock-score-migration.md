@@ -34,8 +34,11 @@ not turn future returns into routine scoring inputs.
     fundamental artifacts into DuckDB-style as-of dimensions: technical score
     band, price heat, volume-price activity, valuation coverage,
     quality/growth coverage, fund-flow guard status, risk flag status, and
-    confidence. The prompt renderer only exposes whitelisted labels and
-    statuses, not raw factor payloads or future-return labels.
+    confidence. It also maps fetched board membership/sector rankings into a
+    low-sensitivity `industry_theme` label, mirroring the DuckDB
+    `industry_theme_score` idea without dumping raw board lists. The prompt
+    renderer only exposes whitelisted labels and statuses, not raw factor
+    payloads or future-return labels.
 - `src/services/ai_candidate_snapshot.py`
   - Hosted runs now export a DuckDB-style fixed JSONL snapshot under
     `reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl` plus a
@@ -73,7 +76,7 @@ not turn future returns into routine scoring inputs.
 ## Next Implementation Milestones
 
 1. Expand `factor_snapshot` with additional as-of fields when they are already
-   fetched safely: industry/theme, institution ownership, and de-risk flags.
+   fetched safely: institution ownership and de-risk flags.
 2. Let DeepSeek optionally read the fixed candidate snapshot in later stages
    instead of re-querying mutable context.
 3. Extend the current `flow_broke` prompt guard into a deterministic

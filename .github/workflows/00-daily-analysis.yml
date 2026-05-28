@@ -460,6 +460,12 @@ jobs:
           else
             python main.py $FORCE_RUN_ARG
           fi
+
+          if [ "$MODE" != "market-only" ]; then
+            python -m src.services.ai_snapshot_audit \
+              --snapshot-path reports/ai_snapshot/stock_ai_candidate_snapshot_latest.jsonl \
+              --output-dir reports/ai_snapshot
+          fi
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6

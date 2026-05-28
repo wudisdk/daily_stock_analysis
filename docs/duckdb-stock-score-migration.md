@@ -63,9 +63,17 @@ not turn future returns into routine scoring inputs.
     run metadata such as `created_at`, `run_id`, and `query_id`, so repeated
     hosted runs can be joined back to the same downstream review/memo input
     while real input changes still get a new digest.
+- `src/services/ai_snapshot_audit.py`
+  - Hosted runs now write a DuckDB-style PASS/WARN/FAIL audit next to the
+    candidate snapshot. The audit checks JSONL parseability, schema version,
+    DeepSeek pro model usage, hash uniqueness, dated-file naming, required
+    factor dimensions, data coverage labels, and low-sensitivity boundaries.
 - `.github/workflows/00-daily-analysis.yml`
   - The hosted daily workflow defaults to DeepSeek LiteLLM models and a
     Tushare-first realtime source order.
+  - The stock-analysis path now runs the AI snapshot audit before uploading
+    artifacts, so snapshot regressions become visible in Actions and in the
+    uploaded `reports/ai_snapshot` files.
 - `.github/workflows/network-smoke.yml`
   - The smoke workflow now receives the same runtime env/secrets as the daily
     workflow, so API/data problems are visible before the daily job runs.

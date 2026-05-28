@@ -135,6 +135,114 @@ class PipelineMarketPhaseContextTestCase(unittest.TestCase):
             current_time=frozen_time,
         )
 
+    def test_legacy_analysis_artifacts_helper_maps_full_pipeline_fields(self):
+        pipeline = _make_pipeline(agent_mode=False, save_context_snapshot=True)
+        pipeline.query_source = "api"
+        phase = _phase_payload()
+        context = {"code": "600519", "today": {"close": 1800.0}, "yesterday": {}}
+        enhanced_context = {"realtime": {"price": 1888.0}, "stock_name": "贵州茅台"}
+        realtime_quote = {"price": 1888.0, "source": "test"}
+        trend_result = {"ma_trend": "up"}
+        chip_data = {"concentration": "medium"}
+        fundamental_context = {"market": "cn", "pe": 28}
+        news_context = "news summary"
+
+        artifacts = pipeline._build_legacy_analysis_artifacts(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+            phase=phase,
+            context=context,
+            enhanced_context=enhanced_context,
+            realtime_quote=realtime_quote,
+            trend_result=trend_result,
+            chip_data=chip_data,
+            fundamental_context=fundamental_context,
+            news_context=news_context,
+            news_result_count=3,
+            query_id="q-legacy",
+        )
+
+        self.assertEqual(artifacts.code, "600519")
+        self.assertEqual(artifacts.stock_name, "贵州茅台")
+        self.assertEqual(artifacts.market, "cn")
+        self.assertIs(artifacts.phase, phase)
+        self.assertIs(artifacts.base_context, context)
+        self.assertIs(artifacts.enhanced_context, enhanced_context)
+        self.assertIs(artifacts.realtime_quote, realtime_quote)
+        self.assertIs(artifacts.trend_result, trend_result)
+        self.assertIs(artifacts.chip_data, chip_data)
+        self.assertIs(artifacts.fundamental_context, fundamental_context)
+        self.assertEqual(artifacts.news_context, news_context)
+        self.assertEqual(artifacts.news_result_count, 3)
+        self.assertEqual(
+            artifacts.metadata,
+            {"query_id": "q-legacy", "trigger_source": "api"},
+        )
+
+    def test_agent_analysis_artifacts_helper_maps_initial_context_zero_fetch(self):
+        pipeline = _make_pipeline(agent_mode=True, save_context_snapshot=True)
+        pipeline.query_source = "system"
+        phase = _phase_payload()
+        realtime_quote = {"price": 1888.0, "source": "test"}
+        trend_result = {"ma_trend": "up"}
+        chip_distribution = {"concentration": "medium"}
+        fundamental_context = {"market": "cn", "pe": 28}
+        initial_context = {
+            "realtime_quote": realtime_quote,
+            "trend_result": trend_result,
+            "chip_distribution": chip_distribution,
+            "news_context": "prefetched news",
+        }
+
+        artifacts = pipeline._build_agent_analysis_artifacts(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+            phase=phase,
+            initial_context=initial_context,
+            fundamental_context=fundamental_context,
+            query_id="q-agent",
+        )
+
+        self.assertEqual(artifacts.code, "600519")
+        self.assertEqual(artifacts.stock_name, "贵州茅台")
+        self.assertEqual(artifacts.market, "cn")
+        self.assertIs(artifacts.phase, phase)
+        self.assertEqual(
+            artifacts.base_context,
+            {
+                "code": "600519",
+                "stock_name": "贵州茅台",
+                "data_missing": True,
+                "today": {},
+                "yesterday": {},
+            },
+        )
+        self.assertNotIn("date", artifacts.base_context)
+        self.assertEqual(artifacts.enhanced_context, {})
+        self.assertIs(artifacts.realtime_quote, realtime_quote)
+        self.assertIs(artifacts.trend_result, trend_result)
+        self.assertIs(artifacts.chip_data, chip_distribution)
+        self.assertIs(artifacts.fundamental_context, fundamental_context)
+        self.assertEqual(artifacts.news_context, "prefetched news")
+        self.assertIsNone(artifacts.news_result_count)
+        self.assertEqual(
+            artifacts.metadata,
+            {"query_id": "q-agent", "trigger_source": "system"},
+        )
+
+        artifacts_without_chip = pipeline._build_agent_analysis_artifacts(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+            phase=phase,
+            initial_context={},
+            fundamental_context=fundamental_context,
+            query_id="q-agent-no-chip",
+        )
+        self.assertIsNone(artifacts_without_chip.chip_data)
+
     def test_legacy_pipeline_passes_market_phase_context_to_analyzer_only(self):
         pipeline = _make_pipeline(agent_mode=False, save_context_snapshot=True)
         phase_payload = _phase_payload()

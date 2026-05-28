@@ -516,12 +516,12 @@ class StockAnalysisPipeline:
             # Step 7: 调用 AI 分析（传入增强的上下文和新闻）
             report_language = normalize_report_language(getattr(self.config, "report_language", "zh"))
             analysis_context_pack_summary = self._build_analysis_context_pack_summary(
-                PipelineAnalysisArtifacts(
+                self._build_legacy_analysis_artifacts(
                     code=code,
                     stock_name=stock_name,
                     market=market,
                     phase=market_phase_context_dict,
-                    base_context=context,
+                    context=context,
                     enhanced_context=enhanced_context,
                     realtime_quote=realtime_quote,
                     trend_result=trend_result,
@@ -529,10 +529,7 @@ class StockAnalysisPipeline:
                     fundamental_context=fundamental_context,
                     news_context=news_context,
                     news_result_count=news_result_count,
-                    metadata={
-                        "query_id": query_id,
-                        "trigger_source": self.query_source,
-                    },
+                    query_id=query_id,
                 ),
                 report_language=report_language,
                 code=code,
@@ -969,29 +966,14 @@ class StockAnalysisPipeline:
 
             market = get_market_for_stock(normalize_stock_code(code))
             analysis_context_pack_summary = self._build_analysis_context_pack_summary(
-                PipelineAnalysisArtifacts(
+                self._build_agent_analysis_artifacts(
                     code=code,
                     stock_name=stock_name,
                     market=market,
                     phase=market_phase_context,
-                    base_context={
-                        "code": code,
-                        "stock_name": stock_name,
-                        "data_missing": True,
-                        "today": {},
-                        "yesterday": {},
-                    },
-                    enhanced_context={},
-                    realtime_quote=initial_context.get("realtime_quote"),
-                    trend_result=initial_context.get("trend_result"),
-                    chip_data=initial_context.get("chip_distribution"),
+                    initial_context=initial_context,
                     fundamental_context=fundamental_context,
-                    news_context=initial_context.get("news_context"),
-                    news_result_count=None,
-                    metadata={
-                        "query_id": query_id,
-                        "trigger_source": self.query_source,
-                    },
+                    query_id=query_id,
                 ),
                 report_language=report_language,
                 code=code,
@@ -1836,6 +1818,78 @@ class StockAnalysisPipeline:
                 )
             except Exception as exc:
                 logger.warning("回写通知诊断快照失败（fail-open）: %s", exc)
+
+    def _build_legacy_analysis_artifacts(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        phase: Optional[Dict[str, Any]],
+        context: Dict[str, Any],
+        enhanced_context: Dict[str, Any],
+        realtime_quote: Any,
+        trend_result: Optional[TrendAnalysisResult],
+        chip_data: Optional[ChipDistribution],
+        fundamental_context: Optional[Dict[str, Any]],
+        news_context: Optional[str],
+        news_result_count: Optional[int],
+        query_id: str,
+    ) -> PipelineAnalysisArtifacts:
+        return PipelineAnalysisArtifacts(
+            code=code,
+            stock_name=stock_name,
+            market=market,
+            phase=phase,
+            base_context=context,
+            enhanced_context=enhanced_context,
+            realtime_quote=realtime_quote,
+            trend_result=trend_result,
+            chip_data=chip_data,
+            fundamental_context=fundamental_context,
+            news_context=news_context,
+            news_result_count=news_result_count,
+            metadata={
+                "query_id": query_id,
+                "trigger_source": self.query_source,
+            },
+        )
+
+    def _build_agent_analysis_artifacts(
+        self,
+        *,
+        code: str,
+        stock_name: str,
+        market: str,
+        phase: Optional[Dict[str, Any]],
+        initial_context: Dict[str, Any],
+        fundamental_context: Optional[Dict[str, Any]],
+        query_id: str,
+    ) -> PipelineAnalysisArtifacts:
+        return PipelineAnalysisArtifacts(
+            code=code,
+            stock_name=stock_name,
+            market=market,
+            phase=phase,
+            base_context={
+                "code": code,
+                "stock_name": stock_name,
+                "data_missing": True,
+                "today": {},
+                "yesterday": {},
+            },
+            enhanced_context={},
+            realtime_quote=initial_context.get("realtime_quote"),
+            trend_result=initial_context.get("trend_result"),
+            chip_data=initial_context.get("chip_distribution"),
+            fundamental_context=fundamental_context,
+            news_context=initial_context.get("news_context"),
+            news_result_count=None,
+            metadata={
+                "query_id": query_id,
+                "trigger_source": self.query_source,
+            },
+        )
 
     def _build_analysis_context_pack_summary(
         self,

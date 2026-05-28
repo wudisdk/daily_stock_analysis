@@ -55,6 +55,9 @@ not turn future returns into routine scoring inputs.
   - Snapshot `trade_date` prefers the latest daily bar date over the workflow
     wall-clock date, so delayed or manual runs after midnight do not mislabel
     the as-of input date.
+  - The dated snapshot file uses the latest `trade_date` across all exported
+    rows, so mixed-market exports are not renamed by whichever candidate ranks
+    first.
   - Snapshot rows now include `input_snapshot_hash`, a deterministic SHA-256
     digest of the stable, already-redacted payload. The hash excludes volatile
     run metadata such as `created_at`, `run_id`, and `query_id`, so repeated

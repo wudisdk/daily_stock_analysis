@@ -216,6 +216,23 @@ def test_build_snapshot_rows_prefers_latest_daily_bar_date_over_runtime_date(tmp
     }
 
 
+def test_write_snapshot_files_uses_latest_trade_date_across_ranked_rows(tmp_path) -> None:
+    high_score_old_date = _result("HK00981", 88)
+    high_score_old_date.diagnostic_context_snapshot["enhanced_context"]["latest_daily_date"] = "2026-05-27"
+    low_score_new_date = _result("688981", 72)
+    low_score_new_date.diagnostic_context_snapshot["enhanced_context"]["latest_daily_date"] = "2026-05-28"
+
+    paths = write_ai_candidate_snapshot_files(
+        [high_score_old_date, low_score_new_date],
+        output_dir=tmp_path,
+        created_at=datetime(2026, 5, 28, 16, 0, tzinfo=timezone.utc),
+    )
+
+    names = {path.name for path in paths}
+    assert "stock_ai_candidate_snapshot_20260528.jsonl" in names
+    assert "stock_ai_candidate_snapshot_20260527.jsonl" not in names
+
+
 def test_write_snapshot_files_writes_latest_and_trade_date_jsonl(tmp_path) -> None:
     paths = write_ai_candidate_snapshot_files(
         [_result()],

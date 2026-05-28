@@ -293,10 +293,13 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
 
 
 def _snapshot_file_date(rows: Sequence[Mapping[str, Any]], timestamp: str) -> str:
+    trade_dates = []
     for row in rows:
         trade_date = _safe_text(row.get("trade_date"))
         if trade_date:
-            return trade_date.replace("-", "")
+            trade_dates.append(trade_date)
+    if trade_dates:
+        return max(trade_dates).replace("-", "")
     return timestamp[:10].replace("-", "")
 
 

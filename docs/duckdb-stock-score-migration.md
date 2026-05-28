@@ -35,7 +35,8 @@ not turn future returns into routine scoring inputs.
     band, price heat, volume-price activity, valuation coverage,
     quality/growth coverage, fund-flow guard status, a deterministic
     `de_risk` label for `flow_broke` / `price_flow_hot` style guardrails,
-    risk flag status, and confidence. It also maps fetched board
+    a DuckDB `confidence_score`-style `data_coverage` label, risk flag status,
+    and confidence. It also maps fetched board
     membership/sector rankings into a low-sensitivity `industry_theme` label,
     mirroring the DuckDB
     `industry_theme_score` idea without dumping raw board lists. The prompt

@@ -91,6 +91,21 @@ def _pack() -> AnalysisContextPack:
                             "status": "missing",
                             "label": "secret-token",
                         },
+                        {
+                            "name": "industry_theme",
+                            "status": "available",
+                            "label": "theme_tailwind",
+                        },
+                        {
+                            "name": "de_risk",
+                            "status": "available",
+                            "label": "flow_broke",
+                        },
+                        {
+                            "name": "data_coverage",
+                            "status": "available",
+                            "label": "high",
+                        },
                     ]
                 },
                 items={
@@ -129,6 +144,9 @@ def test_chinese_summary_renders_low_sensitivity_pack_statuses() -> None:
     assert "新闻: missing" in section
     assert "factor_snapshot: partial" in section
     assert "technical_score:available/constructive" in section
+    assert "industry_theme:available/theme_tailwind" in section
+    assert "de_risk:available/flow_broke" in section
+    assert "data_coverage:available/high" in section
     assert "news_context_missing" in section
     assert "新闻结果数：3" in section
     assert "intraday_realtime_overlay" in section
@@ -145,6 +163,7 @@ def test_english_summary_renders_readable_statuses() -> None:
     assert "quote: fallback" in section
     assert "factor snapshot: partial" in section
     assert "price_heat:available/overheated" in section
+    assert "de_risk:available/flow_broke" in section
     assert "news: missing" in section
     assert "News result count: 3" in section
 

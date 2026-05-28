@@ -30,9 +30,12 @@ _FACTOR_DIMENSION_NAMES = {
     "technical_score",
     "price_heat",
     "volume_price",
+    "industry_theme",
     "valuation",
     "quality_growth",
     "fund_flow",
+    "de_risk",
+    "data_coverage",
     "risk",
     "confidence",
 }
@@ -264,7 +267,7 @@ def _factor_snapshot_dimensions(block: Mapping[str, Any]) -> str:
         if label:
             text += f"/{label}"
         parts.append(text)
-    return ", ".join(parts[:8])
+    return ", ".join(parts[:12])
 
 
 def _nested(value: Any, *keys: str) -> Any:

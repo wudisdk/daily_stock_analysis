@@ -450,12 +450,13 @@ def _build_factor_snapshot_block(
         ),
         _fund_flow_dimension(context, coverage, capital_flow_warnings),
         _de_risk_dimension(context, coverage, capital_flow_warnings),
+        _data_coverage_dimension(artifacts, quote, trend, context, coverage),
     ]
     dimensions.append(_risk_dimension(trend, dimensions, capital_flow_warnings))
     dimensions.append(_confidence_dimension(dimensions, capital_flow_warnings))
 
     available_count = sum(
-        1 for dimension in dimensions[:-1] if _dimension_is_available(dimension)
+        1 for dimension in dimensions if _dimension_is_core_available(dimension)
     )
     if available_count >= 5:
         block_status = ContextFieldStatus.AVAILABLE
@@ -735,6 +736,59 @@ def _de_risk_dimension(
     )
 
 
+def _data_coverage_dimension(
+    artifacts: PipelineAnalysisArtifacts,
+    quote: Mapping[str, Any],
+    trend: Mapping[str, Any],
+    context: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+) -> Dict[str, Any]:
+    score = 0.0
+    total = 0.0
+
+    def add_check(is_available: bool, *, weight: float = 1.0) -> None:
+        nonlocal score, total
+        total += weight
+        if is_available:
+            score += weight
+
+    add_check(bool(quote), weight=1.5)
+    add_check(_has_daily_bar(artifacts.base_context, "today"))
+    add_check(_has_daily_bar(artifacts.base_context, "yesterday"))
+    add_check(bool(trend), weight=1.5)
+    add_check(bool(context), weight=1.0)
+    add_check((artifacts.news_result_count or 0) > 0, weight=1.0)
+
+    for key in ("valuation", "growth", "earnings", "capital_flow", "boards"):
+        status = _coverage_status(coverage.get(key))
+        if status is None:
+            continue
+        total += 0.5
+        if status in {"ok", "available"}:
+            score += 0.5
+        elif status == "partial":
+            score += 0.25
+
+    if total <= 0 or score <= 0:
+        return _dimension(
+            "data_coverage",
+            ContextFieldStatus.MISSING,
+            missing_reason="data_coverage_inputs_missing",
+        )
+
+    ratio = score / total
+    if ratio >= 0.75:
+        status = ContextFieldStatus.AVAILABLE
+        label = "high"
+    elif ratio >= 0.50:
+        status = ContextFieldStatus.PARTIAL
+        label = "medium"
+    else:
+        status = ContextFieldStatus.PARTIAL
+        label = "low"
+    return _dimension("data_coverage", status, label=label)
+
+
 def _missing_de_risk_dimension(
     context: Mapping[str, Any],
     coverage: Mapping[str, Any],
@@ -795,7 +849,9 @@ def _confidence_dimension(
     dimensions: Sequence[Mapping[str, Any]],
     capital_flow_warnings: Sequence[str],
 ) -> Dict[str, Any]:
-    available_count = sum(1 for dimension in dimensions if _dimension_is_available(dimension))
+    available_count = sum(
+        1 for dimension in dimensions if _dimension_is_core_available(dimension)
+    )
     if available_count >= 5 and not capital_flow_warnings:
         label = "high"
     elif available_count >= 3:
@@ -856,6 +912,12 @@ def _dimension_is_available(dimension: Mapping[str, Any]) -> bool:
     }
 
 
+def _dimension_is_core_available(dimension: Mapping[str, Any]) -> bool:
+    if dimension.get("name") in {"data_coverage", "confidence"}:
+        return False
+    return _dimension_is_available(dimension)
+
+
 def _coverage_status(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -899,6 +961,11 @@ def _has_capital_flow_values(context: Mapping[str, Any]) -> bool:
         _numeric_value(stock_flow.get(key)) is not None
         for key in ("main_net_inflow", "inflow_5d", "inflow_10d")
     )
+
+
+def _has_daily_bar(context: Mapping[str, Any], key: str) -> bool:
+    value = context.get(key) if isinstance(context, Mapping) else None
+    return bool(value) if isinstance(value, Mapping) else value not in (None, "")
 
 
 def _numeric_value(value: Any) -> Optional[float]:

@@ -411,6 +411,7 @@ def test_factor_snapshot_derives_low_sensitivity_duckdb_style_dimensions() -> No
     assert dimensions["quality_growth"]["label"] == "available"
     assert dimensions["fund_flow"]["label"] == "risk_guard"
     assert dimensions["de_risk"]["label"] == "flow_broke_price_hot"
+    assert dimensions["data_coverage"]["label"] == "high"
     assert dimensions["risk"]["label"] == "has_risk_flags"
     assert dimensions["confidence"]["label"] == "medium"
     assert "capital_flow_broke_proxy" in block.warnings
@@ -467,6 +468,7 @@ def test_factor_snapshot_marks_clear_de_risk_when_flow_inputs_are_present() -> N
     dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
     assert dimensions["fund_flow"]["label"] == "available"
     assert dimensions["de_risk"]["label"] == "clear"
+    assert dimensions["data_coverage"]["label"] == "high"
 
 
 def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:

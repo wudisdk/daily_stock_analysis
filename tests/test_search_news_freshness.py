@@ -193,6 +193,52 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         p1.search.assert_called_once()
         p2.search.assert_called_once()
 
+    def test_search_comprehensive_intel_falls_back_within_dimension_after_provider_error(self) -> None:
+        """A quota-hit provider should not make the whole intel dimension empty."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="P1",
+            search=MagicMock(
+                return_value=SearchResponse(
+                    query="test",
+                    results=[],
+                    provider="P1",
+                    success=False,
+                    error_message="This request exceeds your plan usage limit",
+                )
+            ),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="P2",
+            search=MagicMock(
+                return_value=SearchResponse(
+                    query="test",
+                    results=[_result("Alibaba BABA fresh news", fresh)],
+                    provider="P2",
+                    success=True,
+                )
+            ),
+        )
+        service._providers = [p1, p2]
+
+        intel = service.search_comprehensive_intel("BABA", "Alibaba", max_searches=1)
+
+        self.assertIn("latest_news", intel)
+        self.assertTrue(intel["latest_news"].success)
+        self.assertEqual(intel["latest_news"].provider, "P2")
+        self.assertEqual([r.title for r in intel["latest_news"].results], ["Alibaba BABA fresh news"])
+        p1.search.assert_called_once()
+        p2.search.assert_called_once()
+
     def test_search_stock_news_prioritizes_chinese_items_within_mixed_results(self) -> None:
         """Chinese items should be ordered ahead of English items in mixed batches."""
         fresh = datetime.now().date().isoformat()

@@ -3717,6 +3717,68 @@ class SearchService:
                 logger.warning(f"[情报搜索] {dim['desc']}: 搜索失败 - {response.error_message}")
             
             # 短暂延迟避免请求过快
+            if (
+                (not filtered_response.success or not filtered_response.results)
+                and len(available_providers) > 1
+            ):
+                fallback_start = provider_index
+                for offset in range(len(available_providers) - 1):
+                    fallback_provider = available_providers[
+                        (fallback_start + offset) % len(available_providers)
+                    ]
+                    if fallback_provider is provider or not fallback_provider.is_available:
+                        continue
+
+                    logger.info(
+                        "[intel_search] %s: trying fallback provider %s after %s returned no usable result",
+                        dim["name"],
+                        fallback_provider.name,
+                        provider.name,
+                    )
+                    if isinstance(fallback_provider, TavilySearchProvider) and dim.get('tavily_topic'):
+                        fallback_response = fallback_provider.search(
+                            dim['query'],
+                            max_results=provider_max_results,
+                            days=search_days,
+                            topic=dim['tavily_topic'],
+                        )
+                    else:
+                        fallback_response = fallback_provider.search(
+                            dim['query'],
+                            max_results=provider_max_results,
+                            days=search_days,
+                        )
+                    if dim['strict_freshness']:
+                        fallback_filtered = self._filter_news_response(
+                            fallback_response,
+                            search_days=search_days,
+                            max_results=provider_max_results,
+                            log_scope=f"{stock_code}:{fallback_provider.name}:{dim['name']}:fallback",
+                        )
+                    else:
+                        fallback_filtered = self._normalize_and_limit_response(
+                            fallback_response,
+                            max_results=provider_max_results,
+                        )
+                    fallback_filtered = self._rank_news_response(
+                        fallback_filtered,
+                        stock_code=stock_code,
+                        stock_name=stock_name,
+                        prefer_chinese=self._should_prefer_chinese_news(stock_code, stock_name),
+                        max_results=target_per_dimension,
+                        log_scope=f"{stock_code}:{fallback_provider.name}:{dim['name']}:fallback:rank",
+                    )
+                    if fallback_filtered.success and fallback_filtered.results:
+                        results[dim['name']] = fallback_filtered
+                        provider_index += offset + 1
+                        logger.info(
+                            "[intel_search] %s: fallback provider %s returned %s usable result(s)",
+                            dim["name"],
+                            fallback_provider.name,
+                            len(fallback_filtered.results),
+                        )
+                        break
+
             time.sleep(0.5)
         
         return results

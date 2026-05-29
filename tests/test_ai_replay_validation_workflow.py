@@ -24,8 +24,11 @@ def _dispatch_inputs(workflow: dict) -> dict:
 def test_ai_replay_validation_workflow_has_manual_inputs_and_read_permissions() -> None:
     workflow = _workflow()
     inputs = _dispatch_inputs(workflow)
+    on_block = workflow.get("on") or workflow.get(True)
     job = workflow["jobs"]["replay-validation"]
 
+    assert on_block["workflow_run"]["workflows"] == ["每日股票分析"]
+    assert on_block["workflow_run"]["types"] == ["completed"]
     assert inputs["source_run_id"]["required"] is True
     assert inputs["analysis_artifact_name"]["default"] == ""
     assert inputs["baseline_run_id"]["default"] == ""
@@ -33,6 +36,7 @@ def test_ai_replay_validation_workflow_has_manual_inputs_and_read_permissions() 
     assert inputs["price_source_run_id"]["default"] == ""
     assert inputs["price_artifact_name"]["default"] == ""
     assert inputs["price_file"]["default"] == "reports/ai_snapshot/stock_ai_candidate_price_history_latest.csv"
+    assert job["if"] == "${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}"
     assert job["permissions"] == {"actions": "read", "contents": "read"}
 
 
@@ -42,12 +46,16 @@ def test_ai_replay_validation_workflow_runs_replay_tools_and_uploads_outputs() -
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
     assert "Download analysis artifact" in steps
+    assert "Resolve replay inputs" in steps
     assert "Download baseline artifact" in steps
     assert "Validate snapshot and replay queue" in steps
     assert "Resolve replay outcomes" in steps
     assert "Upload replay validation artifact" in steps
 
     assert 'gh run download "$SOURCE_RUN_ID"' in text
+    assert "Auto-selected baseline_run_id" in text
+    assert "actions/workflows/00-daily-analysis.yml/runs?status=success" in text
+    assert "No price artifact or price_source_run_id provided; skipping replay outcome resolution." in text
     assert "python -m src.services.ai_snapshot_audit" in text
     assert "python -m src.services.ai_snapshot_replay_queue" in text
     assert "python -m src.services.ai_snapshot_turnover" in text
@@ -75,10 +83,8 @@ def test_ai_replay_validation_workflow_runs_replay_tools_and_uploads_outputs() -
     assert "baseline_artifact_name" in text
     assert "price_artifact_name" in text
     assert "stock_ai_candidate_price_history_latest.csv" in text
-    assert steps["Download baseline artifact"]["if"] == "${{ inputs.baseline_run_id != '' }}"
-    assert steps["Resolve replay outcomes"]["if"] == (
-        "${{ inputs.price_artifact_name != '' || inputs.price_source_run_id != '' }}"
-    )
+    assert "if" not in steps["Download baseline artifact"]
+    assert "if" not in steps["Resolve replay outcomes"]
     assert steps["Upload replay validation artifact"]["with"]["name"] == "ai-replay-validation-${{ github.run_number }}"
 
 

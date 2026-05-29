@@ -1,6 +1,11 @@
 name: AI Replay Validation
 
 on:
+  workflow_run:
+    workflows:
+      - 每日股票分析
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -39,12 +44,13 @@ on:
         type: string
 
 concurrency:
-  group: ai-replay-validation-${{ github.ref }}-${{ inputs.source_run_id }}
+  group: ai-replay-validation-${{ github.ref }}-${{ github.event.inputs.source_run_id || github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   replay-validation:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       actions: read
       contents: read
@@ -57,14 +63,52 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Resolve replay inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SOURCE_RUN_ID: ${{ github.event.inputs.source_run_id || github.event.workflow_run.id }}
+          EVENT_ANALYSIS_ARTIFACT_NAME: ${{ github.event.inputs.analysis_artifact_name || '' }}
+          EVENT_BASELINE_RUN_ID: ${{ github.event.inputs.baseline_run_id || '' }}
+          EVENT_BASELINE_ARTIFACT_NAME: ${{ github.event.inputs.baseline_artifact_name || '' }}
+          EVENT_PRICE_SOURCE_RUN_ID: ${{ github.event.inputs.price_source_run_id || '' }}
+          EVENT_PRICE_ARTIFACT_NAME: ${{ github.event.inputs.price_artifact_name || '' }}
+          EVENT_PRICE_FILE: ${{ github.event.inputs.price_file || 'reports/ai_snapshot/stock_ai_candidate_price_history_latest.csv' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EVENT_SOURCE_RUN_ID" ]; then
+            echo "source_run_id is required for replay validation" >&2
+            exit 1
+          fi
+
+          echo "SOURCE_RUN_ID=$EVENT_SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "ANALYSIS_ARTIFACT_NAME=$EVENT_ANALYSIS_ARTIFACT_NAME" >> "$GITHUB_ENV"
+          echo "BASELINE_RUN_ID=$EVENT_BASELINE_RUN_ID" >> "$GITHUB_ENV"
+          echo "BASELINE_ARTIFACT_NAME=$EVENT_BASELINE_ARTIFACT_NAME" >> "$GITHUB_ENV"
+          echo "PRICE_SOURCE_RUN_ID=$EVENT_PRICE_SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "PRICE_ARTIFACT_NAME=$EVENT_PRICE_ARTIFACT_NAME" >> "$GITHUB_ENV"
+          echo "PRICE_FILE=$EVENT_PRICE_FILE" >> "$GITHUB_ENV"
+
+          if [ "$EVENT_NAME" = "workflow_run" ] && [ -z "$EVENT_BASELINE_RUN_ID" ]; then
+            baseline_run_id="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/00-daily-analysis.yml/runs?status=success&per_page=20" \
+                --jq ".workflow_runs[] | select(.id != ${EVENT_SOURCE_RUN_ID} and .conclusion == \"success\") | .id" \
+                | head -n 1
+            )"
+            if [ -n "$baseline_run_id" ]; then
+              echo "BASELINE_RUN_ID=$baseline_run_id" >> "$GITHUB_ENV"
+              echo "Auto-selected baseline_run_id=$baseline_run_id"
+            else
+              echo "No earlier successful daily-analysis run found for turnover baseline."
+            fi
+          fi
+
       - name: Download analysis artifact
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          ANALYSIS_ARTIFACT_NAME: ${{ inputs.analysis_artifact_name }}
         run: |
           set -euo pipefail
-          artifact_name="$ANALYSIS_ARTIFACT_NAME"
+          artifact_name="${ANALYSIS_ARTIFACT_NAME:-}"
           if [ -z "$artifact_name" ]; then
             artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" \
@@ -76,18 +120,19 @@ jobs:
             echo "No non-expired analysis-reports-* artifact found for run ${SOURCE_RUN_ID}" >&2
             exit 1
           fi
-          echo "analysis_artifact_name=${artifact_name}" >> "$GITHUB_ENV"
+          echo "ANALYSIS_ARTIFACT_NAME=${artifact_name}" >> "$GITHUB_ENV"
           gh run download "$SOURCE_RUN_ID" -n "$artifact_name" --dir downloaded-analysis
 
       - name: Download baseline artifact
-        if: ${{ inputs.baseline_run_id != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
-          BASELINE_ARTIFACT_NAME: ${{ inputs.baseline_artifact_name }}
         run: |
           set -euo pipefail
-          artifact_name="$BASELINE_ARTIFACT_NAME"
+          if [ -z "${BASELINE_RUN_ID:-}" ]; then
+            echo "No baseline_run_id provided; skipping candidate turnover baseline."
+            exit 0
+          fi
+          artifact_name="${BASELINE_ARTIFACT_NAME:-}"
           if [ -z "$artifact_name" ]; then
             artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts" \
@@ -99,8 +144,7 @@ jobs:
             echo "No non-expired baseline analysis-reports-* artifact found for run ${BASELINE_RUN_ID}" >&2
             exit 1
           fi
-          echo "baseline_run_id=${BASELINE_RUN_ID}" >> "$GITHUB_ENV"
-          echo "baseline_artifact_name=${artifact_name}" >> "$GITHUB_ENV"
+          echo "BASELINE_ARTIFACT_NAME=${artifact_name}" >> "$GITHUB_ENV"
           gh run download "$BASELINE_RUN_ID" -n "$artifact_name" --dir downloaded-baseline
 
       - name: Validate snapshot and replay queue
@@ -142,17 +186,16 @@ jobs:
           fi
 
       - name: Resolve replay outcomes
-        if: ${{ inputs.price_artifact_name != '' || inputs.price_source_run_id != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          PRICE_SOURCE_RUN_ID: ${{ inputs.price_source_run_id }}
-          PRICE_ARTIFACT_NAME: ${{ inputs.price_artifact_name }}
-          PRICE_FILE: ${{ inputs.price_file }}
         run: |
           set -euo pipefail
+          if [ -z "${PRICE_ARTIFACT_NAME:-}" ] && [ -z "${PRICE_SOURCE_RUN_ID:-}" ]; then
+            echo "No price artifact or price_source_run_id provided; skipping replay outcome resolution."
+            exit 0
+          fi
           price_run_id="${PRICE_SOURCE_RUN_ID:-$SOURCE_RUN_ID}"
-          price_artifact_name="$PRICE_ARTIFACT_NAME"
+          price_artifact_name="${PRICE_ARTIFACT_NAME:-}"
           if [ -z "$price_artifact_name" ]; then
             price_artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${price_run_id}/artifacts" \
@@ -164,8 +207,8 @@ jobs:
             echo "No non-expired analysis-reports-* price artifact found for run ${price_run_id}" >&2
             exit 1
           fi
-          echo "price_source_run_id=${price_run_id}" >> "$GITHUB_ENV"
-          echo "price_artifact_name=${price_artifact_name}" >> "$GITHUB_ENV"
+          echo "PRICE_SOURCE_RUN_ID=${price_run_id}" >> "$GITHUB_ENV"
+          echo "PRICE_ARTIFACT_NAME=${price_artifact_name}" >> "$GITHUB_ENV"
           gh run download "$price_run_id" -n "$price_artifact_name" --dir price-input
           price_file="${PRICE_FILE:-reports/ai_snapshot/stock_ai_candidate_price_history_latest.csv}"
           price_path="$(
@@ -209,12 +252,12 @@ jobs:
           {
             echo "## AI Replay Validation"
             echo ""
-            echo "- source_run_id: \`${{ inputs.source_run_id }}\`"
-            echo "- analysis_artifact_name: \`${analysis_artifact_name:-${{ inputs.analysis_artifact_name }}}\`"
-            echo "- baseline_run_id: \`${baseline_run_id:-${{ inputs.baseline_run_id }}}\`"
-            echo "- baseline_artifact_name: \`${baseline_artifact_name:-${{ inputs.baseline_artifact_name }}}\`"
-            echo "- price_source_run_id: \`${price_source_run_id:-${{ inputs.price_source_run_id }}}\`"
-            echo "- price_artifact_name: \`${price_artifact_name:-${{ inputs.price_artifact_name }}}\`"
+            echo "- source_run_id: \`${SOURCE_RUN_ID:-}\`"
+            echo "- analysis_artifact_name: \`${ANALYSIS_ARTIFACT_NAME:-}\`"
+            echo "- baseline_run_id: \`${BASELINE_RUN_ID:-}\`"
+            echo "- baseline_artifact_name: \`${BASELINE_ARTIFACT_NAME:-}\`"
+            echo "- price_source_run_id: \`${PRICE_SOURCE_RUN_ID:-}\`"
+            echo "- price_artifact_name: \`${PRICE_ARTIFACT_NAME:-}\`"
             echo ""
             echo "### Files"
             find replay-validation -maxdepth 1 -type f -printf "- %f\n" 2>/dev/null | sort || true

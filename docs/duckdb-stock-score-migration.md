@@ -274,10 +274,14 @@ not turn future returns into routine scoring inputs.
     artifact upload, even when the main analysis step fails before the final
     result display.
 - `.github/workflows/ai-replay-validation.yml`
-  - Manual validation workflow for DuckDB-style replay artifacts. Given a
-    daily-analysis `source_run_id`, it downloads the matching
-    `analysis-reports-*` artifact, reruns snapshot audit and replay queue
-    generation into `replay-validation`, and uploads the validation bundle.
+  - Validation workflow for DuckDB-style replay artifacts. It can still be run
+    manually with a daily-analysis `source_run_id`, but it also starts
+    automatically after a successful daily-analysis run. The automatic path uses
+    the triggering run as `source_run_id`, auto-selects the latest earlier
+    successful daily run as a turnover baseline when one is available, downloads
+    the matching `analysis-reports-*` artifact, reruns snapshot audit and replay
+    queue generation into `replay-validation`, and uploads the validation
+    bundle.
   - When a separate price run/artifact is supplied, the workflow also runs
     `ai_snapshot_replay_outcome` to calculate future return, benchmark return,
     excess return, and summary artifacts. This supports the DuckDB pattern:

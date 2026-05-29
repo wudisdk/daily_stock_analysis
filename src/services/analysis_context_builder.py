@@ -387,13 +387,7 @@ def _fundamental_guard_warnings(
 ) -> List[str]:
     """Derive low-sensitivity prompt guardrails from already-fetched inputs."""
     warnings: List[str] = []
-    stock_flow = _capital_flow_stock_flow(context)
-    flow_values = [
-        _numeric_value(stock_flow.get("main_net_inflow")),
-        _numeric_value(stock_flow.get("inflow_5d")),
-        _numeric_value(stock_flow.get("inflow_10d")),
-    ]
-    present_flows = [value for value in flow_values if value is not None]
+    present_flows = _capital_flow_present_values(context)
 
     if len(present_flows) >= 2 and all(value < 0 for value in present_flows):
         warnings.append(_CAPITAL_FLOW_BROKE_PROXY_WARNING)
@@ -695,6 +689,16 @@ def _fund_flow_dimension(
     )
     status_value = coverage_status or block_status
     if status_value in {"ok", "available"}:
+        present_flows = _capital_flow_present_values(context)
+        if (
+            len(present_flows) >= 2
+            and all(value > 0 for value in present_flows)
+        ):
+            return _dimension(
+                "fund_flow",
+                ContextFieldStatus.AVAILABLE,
+                label="supportive",
+            )
         return _dimension("fund_flow", ContextFieldStatus.AVAILABLE, label="available")
     if status_value == "partial":
         return _dimension("fund_flow", ContextFieldStatus.PARTIAL, label="partial")
@@ -829,6 +833,16 @@ def _missing_de_risk_dimension(
         ContextFieldStatus.MISSING,
         missing_reason="de_risk_signal_missing",
     )
+
+
+def _capital_flow_present_values(context: Mapping[str, Any]) -> List[float]:
+    stock_flow = _capital_flow_stock_flow(context)
+    flow_values = [
+        _numeric_value(stock_flow.get("main_net_inflow")),
+        _numeric_value(stock_flow.get("inflow_5d")),
+        _numeric_value(stock_flow.get("inflow_10d")),
+    ]
+    return [value for value in flow_values if value is not None]
 
 
 def _risk_dimension(

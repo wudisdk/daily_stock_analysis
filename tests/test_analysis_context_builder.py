@@ -532,9 +532,34 @@ def test_factor_snapshot_marks_clear_de_risk_when_flow_inputs_are_present() -> N
     ).blocks["factor_snapshot"]
 
     dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
-    assert dimensions["fund_flow"]["label"] == "available"
+    assert dimensions["fund_flow"]["label"] == "supportive"
     assert dimensions["de_risk"]["label"] == "clear"
     assert dimensions["data_coverage"]["label"] == "high"
+
+
+def test_factor_snapshot_keeps_neutral_fund_flow_available_without_confirmation() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            fundamental_context={
+                "status": "ok",
+                "coverage": {"capital_flow": "ok"},
+                "source_chain": [{"provider": "fundamental_pipeline", "result": "ok"}],
+                "capital_flow": {
+                    "status": "ok",
+                    "data": {
+                        "stock_flow": {
+                            "main_net_inflow": 0.0,
+                            "inflow_5d": 2_000_000.0,
+                        }
+                    },
+                },
+            },
+        )
+    ).blocks["factor_snapshot"]
+
+    dimensions = {item["name"]: item for item in block.metadata["dimensions"]}
+    assert dimensions["fund_flow"]["label"] == "available"
+    assert dimensions["de_risk"]["label"] == "clear"
 
 
 def test_factor_snapshot_marks_missing_inputs_without_fetching() -> None:

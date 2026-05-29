@@ -59,7 +59,7 @@ P1 Block Catalog：
 | `daily_bars` | 完整日线窗口和最近完整日线日期 | P1 不判断 partial bar。 |
 | `technical` | 技术指标、量价结构和形态 | P1 不生成指标。 |
 | `fundamentals` | 估值、成长、盈利、财报和股东回报 | P1 不新增基本面 fetcher。 |
-| `factor_snapshot` | Low-sensitivity as-of factor summary: technical score band, price heat, volume-price activity, industry theme, valuation/quality coverage, fund-flow guard, de-risk guard, data coverage, risk and confidence labels. | Derived only from already-fetched artifacts; no new fetcher, raw payload dump, or future-return label. |
+| `factor_snapshot` | Low-sensitivity as-of factor summary: technical score band, price heat, volume-price activity, industry theme, valuation/quality coverage, fund-flow confirmation/guard, de-risk guard, data coverage, risk and confidence labels. | Derived only from already-fetched artifacts; no new fetcher, raw payload dump, or future-return label. |
 | `news` | 新闻、公告、舆情和催化事件输入 | P1 不改变新闻搜索。 |
 | `portfolio` | 是否持仓、账户摘要、成本、数量、仓位和 stale 摘要 | P1 不纳入交易流水、现金流水或完整账户隐私数据。 |
 | `chip` / `capital_flow` | 筹码、资金流和主力行为 | 后续扩展键，P1 只允许契约表达。 |
@@ -90,7 +90,7 @@ P2 block 组装边界：
 - `technical` 优先复用 `trend_result.to_dict()`；无 trend artifact 时为 `missing`。
 - `chip` 复用 `chip_data.to_dict()`；无 chip artifact 默认 `missing`，只有输入 metadata/artifact 明确 not_supported 时才标 `not_supported`。
 - `fundamentals` 只读 `fundamental_context` 参数；`ok` 映射为 `available`，`not_supported` 映射为 `not_supported`，`partial` 映射为 `partial`，`failed` 映射为 `missing` + 稳定 reason code；不写入 `errors[]` 原文。
-- `factor_snapshot` 只读已传入的 `realtime_quote`、`trend_result` 和 `fundamental_context`，把 DuckDB 风格的 as-of 维度压缩为低敏 label/status：technical score band、price heat、volume-price activity、industry theme、valuation/quality coverage、fund-flow guard、de-risk guard、data coverage、risk 和 confidence；不写入原始资金流金额、风险文本或未来收益标签。
+- `factor_snapshot` 只读已传入的 `realtime_quote`、`trend_result` 和 `fundamental_context`，把 DuckDB 风格的 as-of 维度压缩为低敏 label/status：technical score band、price heat、volume-price activity、industry theme、valuation/quality coverage、fund-flow confirmation/guard、de-risk guard、data coverage、risk 和 confidence；其中 `fund_flow=supportive` 只表示已有资金流窗口形成同向正确认，不写入原始资金流金额、风险文本或未来收益标签。
 - `news` 非空白字符串为 `available`，空白或缺失为 `missing`；`news_result_count` 写入 pack metadata。
 
 P2 不组装 `portfolio`、`events`、`market_context`，也不把 `capital_flow` 拆成独立 block；首版只把它保留在 fundamentals 的 coverage/source chain metadata 和 `factor_snapshot` 的低敏 guard label 中。P2 也不改变 Prompt、不让普通分析或 Agent runtime 消费 pack、不写入 history/task/report metadata、不暴露完整 pack 到 API/Web/Bot/Desktop/通知，不做 P5 data-quality scoring、`fetch_failed` 细分或模型置信度限制。

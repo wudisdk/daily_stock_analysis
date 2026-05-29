@@ -39,6 +39,12 @@ not turn future returns into routine scoring inputs.
   - The `price_flow_hot` proxy now falls back to trend-derived
     `bias_ma5`/`volume_ratio_5d` when realtime quote providers such as
     YFinance do not expose quote-level volume ratio fields.
+  - The `fund_flow` dimension now separates generic capital-flow availability
+    from low-sensitivity confirmation: when already-fetched `main_net_inflow`,
+    `inflow_5d`, and `inflow_10d` windows are present and all available windows
+    are positive, the label becomes `supportive`. This mirrors the DuckDB
+    active/passive confirmation discipline as a hosted proxy without storing
+    raw flow amounts.
   - Combined `de_risk` labels keep the canonical `price_flow_hot` token, for
     example `flow_broke_price_flow_hot`, so replay queues emit both
     `flow_broke_proxy` and `price_flow_hot_proxy` instead of dropping the

@@ -56,6 +56,31 @@ def test_audit_run_logs_passes_clean_deepseek_pro_log(tmp_path) -> None:
     assert checks["snapshot_audit_visible"]["status"] == "PASS"
 
 
+def test_audit_run_logs_treats_warn_snapshot_audit_marker_as_visible(tmp_path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "stock_analysis_20260531.log").write_text(
+        "\n".join(
+            [
+                "[LLM config] model: deepseek/deepseek-v4-pro",
+                "[LLM response] deepseek/deepseek-v4-pro success",
+                "ai_snapshot_audit status=WARN rows=3 checks={'WARN': 1, 'PASS': 12}",
+                "ai_snapshot_replay_queue rows=15 candidates=3 horizons=5 audit_status=PASS outputs=reports/ai_snapshot/x.json",
+                "ai_snapshot_price_history rows=115 candidates=3 audit_status=WARN outputs=reports/ai_snapshot/y.json",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    audit = audit_run_logs(log_dir, environ=_provider_env())
+
+    checks = {check["check"]: check for check in audit["checks"]}
+    assert checks["snapshot_audit_visible"]["status"] == "PASS"
+    assert checks["snapshot_audit_visible"]["evidence"]["snapshot_audit_warn_count"] == 1
+    assert checks["ai_replay_artifacts_visible"]["status"] == "PASS"
+    assert audit["summary"]["snapshot_audit_warn_count"] == 1
+
+
 def test_audit_run_logs_warns_for_tavily_quota_and_realtime_fallback(tmp_path) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()

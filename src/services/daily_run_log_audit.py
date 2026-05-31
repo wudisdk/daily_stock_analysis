@@ -243,6 +243,10 @@ def _inspect_log_file(path: Path) -> Dict[str, Any]:
             lines,
             (re.compile(r"ai_snapshot_audit\s+status=PASS", re.IGNORECASE),),
         ),
+        "snapshot_audit_warn_count": _count_regex(
+            lines,
+            (re.compile(r"ai_snapshot_audit\s+status=WARN", re.IGNORECASE),),
+        ),
         "snapshot_audit_fail_count": _count_regex(
             lines,
             (re.compile(r"ai_snapshot_audit\s+status=FAIL", re.IGNORECASE),),
@@ -290,6 +294,7 @@ def _summarize_observations(observations: Sequence[Mapping[str, Any]]) -> Dict[s
         "yfinance_source_mismatch_count": 0,
         "candidate_snapshot_export_count": 0,
         "snapshot_audit_pass_count": 0,
+        "snapshot_audit_warn_count": 0,
         "snapshot_audit_fail_count": 0,
         "replay_queue_run_count": 0,
         "replay_queue_fail_count": 0,
@@ -567,11 +572,14 @@ def _audit_yfinance_source_label(checks: List[Dict[str, Any]], summary: Mapping[
 def _audit_replay_artifact_visibility(checks: List[Dict[str, Any]], summary: Mapping[str, Any]) -> None:
     snapshot_exports = _int_or_zero(summary.get("candidate_snapshot_export_count"))
     snapshot_audit_passes = _int_or_zero(summary.get("snapshot_audit_pass_count"))
+    snapshot_audit_warns = _int_or_zero(summary.get("snapshot_audit_warn_count"))
+    snapshot_audit_fails = _int_or_zero(summary.get("snapshot_audit_fail_count"))
     queue_runs = _int_or_zero(summary.get("replay_queue_run_count"))
     queue_fails = _int_or_zero(summary.get("replay_queue_fail_count"))
     price_runs = _int_or_zero(summary.get("price_history_run_count"))
     price_fails = _int_or_zero(summary.get("price_history_fail_count"))
-    should_have_replay = bool(snapshot_exports or snapshot_audit_passes)
+    snapshot_audit_runs = snapshot_audit_passes + snapshot_audit_warns + snapshot_audit_fails
+    should_have_replay = bool(snapshot_exports or snapshot_audit_runs)
     if queue_fails or price_fails:
         status = "FAIL"
         message = "AI replay artifact step reported failure"
@@ -592,6 +600,8 @@ def _audit_replay_artifact_visibility(checks: List[Dict[str, Any]], summary: Map
         {
             "candidate_snapshot_export_count": snapshot_exports,
             "snapshot_audit_pass_count": snapshot_audit_passes,
+            "snapshot_audit_warn_count": snapshot_audit_warns,
+            "snapshot_audit_fail_count": snapshot_audit_fails,
             "replay_queue_run_count": queue_runs,
             "replay_queue_fail_count": queue_fails,
             "price_history_run_count": price_runs,
@@ -623,6 +633,7 @@ def _audit_runtime_errors(checks: List[Dict[str, Any]], summary: Mapping[str, An
 
 def _audit_snapshot_audit_visibility(checks: List[Dict[str, Any]], summary: Mapping[str, Any]) -> None:
     pass_count = _int_or_zero(summary.get("snapshot_audit_pass_count"))
+    warn_count = _int_or_zero(summary.get("snapshot_audit_warn_count"))
     fail_count = _int_or_zero(summary.get("snapshot_audit_fail_count"))
     if fail_count:
         status = "FAIL"
@@ -630,6 +641,9 @@ def _audit_snapshot_audit_visibility(checks: List[Dict[str, Any]], summary: Mapp
     elif pass_count:
         status = "PASS"
         message = "snapshot audit PASS marker found in logs"
+    elif warn_count:
+        status = "PASS"
+        message = "snapshot audit WARN marker found in logs"
     else:
         status = "WARN"
         message = "snapshot audit marker not found in logs"
@@ -638,7 +652,11 @@ def _audit_snapshot_audit_visibility(checks: List[Dict[str, Any]], summary: Mapp
         "snapshot_audit_visible",
         status,
         message,
-        {"snapshot_audit_pass_count": pass_count, "snapshot_audit_fail_count": fail_count},
+        {
+            "snapshot_audit_pass_count": pass_count,
+            "snapshot_audit_warn_count": warn_count,
+            "snapshot_audit_fail_count": fail_count,
+        },
     )
 
 

@@ -141,7 +141,7 @@ def test_daily_analysis_defaults_to_deepseek_v4_and_stable_search() -> None:
         "${{ vars.LITELLM_LOG_LEVEL || secrets.LITELLM_LOG_LEVEL || 'ERROR' }}"
     )
     assert env["SEARXNG_PUBLIC_INSTANCES_ENABLED"] == (
-        "${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED || 'false' }}"
+        "${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED || 'true' }}"
     )
     assert env["REALTIME_SOURCE_PRIORITY"] == (
         "${{ vars.REALTIME_SOURCE_PRIORITY || 'tushare,tencent,akshare_sina,efinance,akshare_em' }}"
@@ -244,7 +244,7 @@ def test_network_smoke_uses_actions_runtime_env() -> None:
             "${{ vars.REALTIME_SOURCE_PRIORITY || 'tushare,tencent,akshare_sina,efinance,akshare_em' }}"
         )
         assert env["SEARXNG_PUBLIC_INSTANCES_ENABLED"] == (
-            "${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED || 'false' }}"
+            "${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED || 'true' }}"
         )
 
 

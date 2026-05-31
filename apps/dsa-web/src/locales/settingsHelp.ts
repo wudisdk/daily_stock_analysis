@@ -271,6 +271,41 @@ const settingsHelpZhCN: SettingsHelpMap = {
       '如果飞书侧配置 IP 白名单，需要确认当前运行环境出口 IP 已加入白名单。',
     ],
   },
+  'settings.notification.FEISHU_STREAM_ENABLED': {
+    title: '飞书 Stream 模式',
+    summary: '启用飞书应用机器人 / Stream Bot 长连接模式，不是飞书群 Webhook 推送开关。',
+    usage: '只有在已创建飞书应用、完成应用发布、权限和事件订阅配置后才开启；同时需要 FEISHU_APP_ID 和 FEISHU_APP_SECRET。',
+    valueNotes: [
+      'true 表示允许运行时使用应用机器人 Stream 模式。',
+      'false 表示不启用 Stream 模式；群消息推送仍应使用 FEISHU_WEBHOOK_URL。',
+      '只填写 App ID/Secret 或只开启 Stream，不等于启用群 Webhook 推送。',
+    ],
+    impact: [
+      '影响飞书应用机器人交互或 Stream Bot 链路。',
+      '不会改变 FEISHU_WEBHOOK_URL 的群机器人 Webhook 推送语义。',
+    ],
+    notes: [
+      '保存后通常需要重启相关 bot/服务进程，已运行的长连接不会自动重建。',
+      '失败只应影响飞书应用机器人链路，不应拖垮主分析流程。',
+    ],
+  },
+  'settings.notification.DINGTALK_STREAM_ENABLED': {
+    title: '钉钉 Stream 模式',
+    summary: '启用钉钉应用机器人长连接模式，不是普通钉钉群机器人 Webhook 开关。',
+    usage: '需要先在钉钉开放平台配置应用机器人，并填写 DINGTALK_APP_KEY 和 DINGTALK_APP_SECRET。',
+    valueNotes: [
+      'true 表示允许运行时使用钉钉应用机器人 Stream/长连接模式。',
+      'false 表示不启用该长连接模式；自定义 Webhook 中的钉钉群机器人地址仍走 CUSTOM_WEBHOOK_URLS。',
+    ],
+    impact: [
+      '影响钉钉应用机器人交互或长连接链路。',
+      '不会改变自定义 Webhook 通知的发送路径。',
+    ],
+    notes: [
+      '保存后通常需要重启相关 bot/服务进程，已运行的长连接不会自动重建。',
+      '不要把 Stream 模式和群机器人 Webhook 混为一条配置路径。',
+    ],
+  },
   'settings.notification.webhooks': {
     title: '企业微信 Webhook',
     summary: '配置企业微信群机器人 Webhook，用于把分析报告推送到指定群。',
@@ -364,6 +399,54 @@ const settingsHelpZhCN: SettingsHelpMap = {
     ],
     impact: ['影响重启后浏览器访问 WebUI 的 URL 端口。'],
     notes: ['修改 WEBUI_PORT 后需要重启当前进程、Docker 容器或服务管理器才会生效。'],
+  },
+  'settings.system.LOG_DIR': {
+    title: '日志目录',
+    summary: '配置应用日志输出目录。',
+    usage: '填写运行用户或容器可写的目录路径；本地默认 ./logs，容器内常见路径为 /app/logs。',
+    valueNotes: [
+      '相对路径按运行进程的工作目录解析。',
+      'Longbridge SDK 等组件也可能在该目录下写入日志文件。',
+    ],
+    impact: [
+      '影响应用日志、部分 SDK 日志和排障文件的落盘位置。',
+    ],
+    notes: [
+      '修改后通常需要重启进程，已初始化的 logger 不一定会立即切换目录。',
+      'Docker、桌面端和本地源码运行的可写路径不同，保存前需确认权限。',
+    ],
+  },
+  'settings.system.WEBUI_ENABLED': {
+    title: '默认启动 WebUI',
+    summary: '控制启动期是否默认进入 WebUI/API 服务模式。',
+    usage: '这是兼容旧启动入口的启动期配置；保存后不会让当前页面立即启动或关闭 WebUI。',
+    valueNotes: [
+      'true 表示后续按默认入口启动时倾向进入 WebUI/API 服务模式。',
+      'false 表示保持非 WebUI 默认启动行为；显式 CLI 参数仍可能覆盖该配置。',
+    ],
+    impact: [
+      '影响 main.py 或相关服务入口下一次启动时的默认模式。',
+    ],
+    notes: [
+      '保存后需要重启相关进程才会生效。',
+      '不要把该开关理解为当前 Web 设置页的即时启停按钮。',
+    ],
+  },
+  'settings.system.WEBUI_AUTO_BUILD': {
+    title: '启动前自动构建前端',
+    summary: '控制后端启动 WebUI 前是否自动检查并构建前端静态产物。',
+    usage: '源码部署通常保持 true；已预构建镜像、离线环境或受限环境可设为 false。',
+    valueNotes: [
+      'true 时启动流程会尝试准备 apps/dsa-web 静态产物。',
+      'false 时只检查已有构建产物；如果产物缺失，WebUI 可能不可用或只看到后端警告。',
+    ],
+    impact: [
+      '影响 WebUI 下一次启动时前端静态资源是否自动准备。',
+    ],
+    notes: [
+      '保存后不会立即触发构建，需要重启相关后端进程。',
+      '在 Docker 或发布包中关闭前，请确认构建产物已经随镜像或安装包提供。',
+    ],
   },
   'settings.system.ADMIN_AUTH_ENABLED': {
     title: 'Web 登录保护',
@@ -1114,6 +1197,41 @@ const settingsHelpEnUS: SettingsHelpMap = {
       'If IP allowlisting is enabled in Feishu, add the outbound IP of your runtime environment.',
     ],
   },
+  'settings.notification.FEISHU_STREAM_ENABLED': {
+    title: 'Feishu Stream Mode',
+    summary: 'Enables Feishu application bot / Stream Bot long-connection mode. It is not the Feishu group webhook switch.',
+    usage: 'Enable it only after the Feishu app is created, published, granted permissions, and configured for events. FEISHU_APP_ID and FEISHU_APP_SECRET are also required.',
+    valueNotes: [
+      'true allows runtime Feishu app bot stream mode.',
+      'false disables stream mode; group message delivery still uses FEISHU_WEBHOOK_URL.',
+      'App credentials or this switch alone do not enable group webhook delivery.',
+    ],
+    impact: [
+      'Affects Feishu application bot interaction or Stream Bot paths.',
+      'Does not change FEISHU_WEBHOOK_URL group webhook delivery semantics.',
+    ],
+    notes: [
+      'Restart the relevant bot/service process after saving; existing long connections are not rebuilt automatically.',
+      'Failures should affect only the Feishu app bot path, not the main analysis flow.',
+    ],
+  },
+  'settings.notification.DINGTALK_STREAM_ENABLED': {
+    title: 'DingTalk Stream Mode',
+    summary: 'Enables DingTalk application bot long-connection mode. It is not the regular DingTalk group webhook switch.',
+    usage: 'Configure a DingTalk application bot first, then provide DINGTALK_APP_KEY and DINGTALK_APP_SECRET.',
+    valueNotes: [
+      'true allows runtime DingTalk app bot stream/long-connection mode.',
+      'false disables that long-connection mode; DingTalk group webhook URLs in CUSTOM_WEBHOOK_URLS still use the custom webhook path.',
+    ],
+    impact: [
+      'Affects DingTalk application bot interaction or long-connection paths.',
+      'Does not change custom webhook notification delivery.',
+    ],
+    notes: [
+      'Restart the relevant bot/service process after saving; existing long connections are not rebuilt automatically.',
+      'Do not treat Stream mode and group bot Webhook as the same delivery path.',
+    ],
+  },
   'settings.notification.webhooks': {
     title: 'Enterprise WeChat Webhook',
     summary: 'Configures an Enterprise WeChat group bot webhook for report delivery.',
@@ -1196,6 +1314,48 @@ const settingsHelpEnUS: SettingsHelpMap = {
     ],
     impact: ['Affects the browser URL used to open WebUI after restart.'],
     notes: ['Restart the process, Docker container, or service manager after changing WEBUI_PORT.'],
+  },
+  'settings.system.LOG_DIR': {
+    title: 'Log Directory',
+    summary: 'Configures where application logs are written.',
+    usage: 'Use a directory writable by the runtime user or container. The local default is ./logs; container deployments often use /app/logs.',
+    valueNotes: [
+      'Relative paths are resolved from the process working directory.',
+      'Components such as the Longbridge SDK can also write log files under this directory.',
+    ],
+    impact: ['Affects application logs, some SDK logs, and troubleshooting files.'],
+    notes: [
+      'Restart the process after changing this field; already initialized loggers may not switch immediately.',
+      'Docker, desktop, and source deployments can have different writable paths.',
+    ],
+  },
+  'settings.system.WEBUI_ENABLED': {
+    title: 'Default WebUI Startup',
+    summary: 'Controls whether startup defaults to WebUI/API service mode.',
+    usage: 'This is a startup-time compatibility flag. Saving it does not immediately start or stop the current WebUI process.',
+    valueNotes: [
+      'true makes later default entrypoint starts prefer WebUI/API service mode.',
+      'false keeps the non-WebUI default startup behavior; explicit CLI arguments can still override it.',
+    ],
+    impact: ['Affects the default mode on the next main.py or service-entry startup.'],
+    notes: [
+      'Restart the relevant process before the change takes effect.',
+      'Do not treat this switch as an immediate on/off control for the current settings page.',
+    ],
+  },
+  'settings.system.WEBUI_AUTO_BUILD': {
+    title: 'Auto-build Web Frontend',
+    summary: 'Controls whether backend WebUI startup automatically checks and builds frontend static assets.',
+    usage: 'Keep true for source deployments. Set false for prebuilt images, offline environments, or restricted runtimes.',
+    valueNotes: [
+      'true makes startup prepare apps/dsa-web static assets.',
+      'false only verifies existing build artifacts; if assets are missing, WebUI may be unavailable or only backend warnings will be logged.',
+    ],
+    impact: ['Affects frontend asset preparation on the next WebUI backend startup.'],
+    notes: [
+      'Saving does not trigger a build immediately; restart the backend process.',
+      'Before disabling it in Docker or packages, make sure the built assets are already included.',
+    ],
   },
   'settings.system.ADMIN_AUTH_ENABLED': {
     title: 'Web Login Protection',

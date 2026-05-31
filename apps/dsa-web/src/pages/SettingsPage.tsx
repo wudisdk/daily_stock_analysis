@@ -316,7 +316,7 @@ const SettingsPage: React.FC = () => {
 
   // Hide channel-managed and legacy provider-specific LLM keys from the
   // generic form only when channel config is the active runtime source.
-  const LLM_CHANNEL_KEY_RE = /^LLM_[A-Z0-9]+_(PROTOCOL|BASE_URL|API_KEY|API_KEYS|MODELS|EXTRA_HEADERS|ENABLED)$/;
+  const LLM_CHANNEL_KEY_RE = /^LLM_[A-Z0-9_]+_(PROTOCOL|BASE_URL|API_KEY|API_KEYS|MODELS|EXTRA_HEADERS|ENABLED)$/;
   const AI_MODEL_HIDDEN_KEYS = new Set([
     'LLM_CHANNELS',
     'LLM_TEMPERATURE',

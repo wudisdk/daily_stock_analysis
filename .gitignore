@@ -84,4 +84,7 @@ verify_*.py
 static/
 /apps/dsa-desktop/dist/
 /apps/dsa-desktop/node_modules/
+/apps/dsa-web/node_modules/
+/apps/dsa-web/node_modules.failed-*/
+/apps/dsa-web/.npm-cache/
 docs/specs/

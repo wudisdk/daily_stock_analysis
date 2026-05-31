@@ -67,6 +67,17 @@ _CATEGORY_DEFINITIONS: List[Dict[str, Any]] = [
     },
 ]
 
+WEB_SETTINGS_HIDDEN_FROM_UI = {
+    "DATABASE_PATH",
+    "SQLITE_WAL_ENABLED",
+    "SQLITE_BUSY_TIMEOUT_MS",
+    "SQLITE_WRITE_RETRY_MAX",
+    "SQLITE_WRITE_RETRY_BASE_DELAY",
+    "USE_PROXY",
+    "PROXY_HOST",
+    "PROXY_PORT",
+}
+
 _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "STOCK_LIST": {
         "title": "Stock List",
@@ -1196,6 +1207,34 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "validation": {},
         "display_order": 30,
     },
+    "DINGTALK_STREAM_ENABLED": {
+        "title": "DingTalk Stream Mode",
+        "description": "Enable DingTalk application bot stream/long-connection mode. This is separate from DingTalk group webhook delivery.",
+        "category": "notification",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 35,
+        "help_key": "settings.notification.DINGTALK_STREAM_ENABLED",
+        "examples": [
+            "DINGTALK_STREAM_ENABLED=false",
+            "DINGTALK_STREAM_ENABLED=true",
+            "DINGTALK_APP_KEY=your_dingtalk_app_key",
+            "DINGTALK_APP_SECRET=your_dingtalk_app_secret",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：通知渠道配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#通知渠道详细配置",
+            },
+        ],
+        "warning_codes": ["not_webhook_delivery", "restart_required"],
+    },
     "PUSHPLUS_TOKEN": {
         "title": "PushPlus Token",
         "description": "Token for PushPlus notifications.",
@@ -1440,6 +1479,38 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "options": [],
         "validation": {},
         "display_order": 16,
+    },
+    "FEISHU_STREAM_ENABLED": {
+        "title": "Feishu Stream Mode",
+        "description": "Enable Feishu application bot stream mode. This is separate from Feishu group webhook delivery.",
+        "category": "notification",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 17,
+        "help_key": "settings.notification.FEISHU_STREAM_ENABLED",
+        "examples": [
+            "FEISHU_STREAM_ENABLED=false",
+            "FEISHU_STREAM_ENABLED=true",
+            "FEISHU_APP_ID=cli_xxxxx",
+            "FEISHU_APP_SECRET=your_feishu_app_secret",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：飞书通知配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#飞书",
+            },
+            {
+                "label": "飞书机器人配置专题",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/bot/feishu-bot-config.md",
+            },
+        ],
+        "warning_codes": ["not_webhook_delivery", "restart_required"],
     },
     # ------------------------------------------------------------------
     # Notification – Telegram
@@ -2438,6 +2509,92 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             },
         ],
         "warning_codes": ["restart_required"],
+    },
+    "LOG_DIR": {
+        "title": "Log Directory",
+        "description": "Directory for application logs. The runtime user or container must be able to write to this path.",
+        "category": "system",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "./logs",
+        "options": [],
+        "validation": {},
+        "display_order": 31,
+        "help_key": "settings.system.LOG_DIR",
+        "examples": [
+            "LOG_DIR=./logs",
+            "LOG_DIR=/app/logs",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：环境变量完整列表",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#环境变量完整列表",
+            },
+        ],
+        "warning_codes": ["restart_required", "path_must_be_writable"],
+    },
+    "WEBUI_ENABLED": {
+        "title": "Web UI Enabled",
+        "description": "Startup-time compatibility flag for default WebUI/API service mode. Saving this setting does not start or stop the current process.",
+        "category": "system",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 37,
+        "help_key": "settings.system.WEBUI_ENABLED",
+        "examples": [
+            "WEBUI_ENABLED=false",
+            "WEBUI_ENABLED=true",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：WebUI 与 API",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#webui-与-api-服务",
+            },
+            {
+                "label": "云服务器访问 WebUI",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+            },
+        ],
+        "warning_codes": ["restart_required"],
+    },
+    "WEBUI_AUTO_BUILD": {
+        "title": "Web UI Auto Build",
+        "description": "Build or verify the Web frontend assets before backend WebUI startup. Disable only when assets are prebuilt.",
+        "category": "system",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 38,
+        "help_key": "settings.system.WEBUI_AUTO_BUILD",
+        "examples": [
+            "WEBUI_AUTO_BUILD=true",
+            "WEBUI_AUTO_BUILD=false",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：WebUI 与 API",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#webui-与-api-服务",
+            },
+            {
+                "label": "云服务器访问 WebUI",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/deploy-webui-cloud.md",
+            },
+        ],
+        "warning_codes": ["restart_required", "requires_built_web_assets"],
     },
     "WEBUI_HOST": {
         "title": "Web UI Host",

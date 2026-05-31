@@ -44,7 +44,10 @@ class _InvalidTrend:
         return ["not", "a", "mapping"]
 
 
-def _quote(source: RealtimeSource = RealtimeSource.AKSHARE_EM) -> UnifiedRealtimeQuote:
+def _quote(
+    source: RealtimeSource = RealtimeSource.AKSHARE_EM,
+    **overrides,
+) -> UnifiedRealtimeQuote:
     return UnifiedRealtimeQuote(
         code="600519",
         name="贵州茅台",
@@ -53,6 +56,7 @@ def _quote(source: RealtimeSource = RealtimeSource.AKSHARE_EM) -> UnifiedRealtim
         change_pct=1.2,
         volume_ratio=1.3,
         turnover_rate=0.5,
+        **overrides,
     )
 
 
@@ -150,6 +154,92 @@ def test_quote_block_maps_available_missing_fallback_and_explicit_stale() -> Non
     assert "quote_stale" in stale.warnings
 
 
+def test_quote_block_maps_realtime_metadata_and_status_priority() -> None:
+    fallback = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote=_quote(
+                fetched_at="2026-05-31T10:00:05+00:00",
+                provider_timestamp="2026-05-31T10:00:00+00:00",
+                is_stale=False,
+                stale_seconds=5,
+                fallback_from="efinance",
+            )
+        )
+    ).blocks["quote"]
+
+    assert fallback.status == ContextFieldStatus.FALLBACK
+    assert fallback.source == "akshare_em"
+    assert fallback.timestamp == "2026-05-31T10:00:00+00:00"
+    assert fallback.items["price"].timestamp == "2026-05-31T10:00:00+00:00"
+    assert fallback.items["price"].fallback_from == "efinance"
+    assert fallback.metadata["fetched_at"] == "2026-05-31T10:00:05+00:00"
+    assert fallback.metadata["provider_timestamp"] == "2026-05-31T10:00:00+00:00"
+    assert fallback.metadata["is_stale"] is False
+    assert fallback.metadata["stale_seconds"] == 5
+    assert fallback.metadata["fallback_from"] == "efinance"
+
+    stale = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote=_quote(
+                fetched_at="2026-05-31T10:15:00+00:00",
+                provider_timestamp="2026-05-31T10:00:00+00:00",
+                is_stale=True,
+                stale_seconds=900,
+                fallback_from="efinance",
+            )
+        )
+    ).blocks["quote"]
+
+    assert stale.status == ContextFieldStatus.STALE
+    assert stale.source == "akshare_em"
+    assert stale.items["price"].fallback_from == "efinance"
+    assert "quote_stale" in stale.warnings
+
+
+def test_quote_block_ignores_invalid_or_legacy_timestamp_metadata() -> None:
+    block = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1870.0,
+                "provider_timestamp": "not-a-date",
+                "fetched_at": "2026-05-31T10:00:05+00:00",
+                "timestamp": 0,
+            }
+        )
+    ).blocks["quote"]
+
+    assert block.status == ContextFieldStatus.AVAILABLE
+    assert block.timestamp == "2026-05-31T10:00:05+00:00"
+    assert block.items["price"].timestamp == "2026-05-31T10:00:05+00:00"
+    assert block.metadata["fetched_at"] == "2026-05-31T10:00:05+00:00"
+    assert "provider_timestamp" not in block.metadata
+
+    legacy_timestamp_only = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1870.0,
+                "timestamp": 0,
+            }
+        )
+    ).blocks["quote"]
+    assert legacy_timestamp_only.timestamp is None
+    assert legacy_timestamp_only.items["price"].timestamp is None
+
+    space_separated_timestamp = AnalysisContextBuilder.build(
+        _artifacts(
+            realtime_quote={
+                "source": "akshare_em",
+                "price": 1870.0,
+                "provider_timestamp": "2026-05-31 10:00:00",
+            }
+        )
+    ).blocks["quote"]
+    assert space_separated_timestamp.timestamp is None
+    assert space_separated_timestamp.items["price"].timestamp is None
+
+
 def test_daily_bars_uses_base_context_and_keeps_dates_out_of_timestamp() -> None:
     pack = AnalysisContextBuilder.build(
         _artifacts(
@@ -227,6 +317,26 @@ def test_technical_missing_and_realtime_overlay_statuses_are_explicit() -> None:
     assert block.items["intraday_overlay"].status == ContextFieldStatus.ESTIMATED
     assert "intraday_realtime_overlay" in block.warnings
     assert "intraday_realtime_overlay" in pack.data_quality.warnings
+
+    explicit_pack = AnalysisContextBuilder.build(
+        _artifacts(
+            enhanced_context={
+                "today": {
+                    "close": 1880.0,
+                    "is_partial_bar": True,
+                    "is_estimated": True,
+                    "estimated_fields": ["close", "ma5"],
+                }
+            }
+        )
+    )
+    explicit_block = explicit_pack.blocks["technical"]
+
+    assert explicit_block.status == ContextFieldStatus.PARTIAL
+    assert explicit_block.items["intraday_overlay"].status == ContextFieldStatus.ESTIMATED
+    assert explicit_block.metadata["is_partial_bar"] is True
+    assert explicit_block.metadata["is_estimated"] is True
+    assert explicit_block.metadata["estimated_fields"] == ["close", "ma5"]
 
 
 def test_chip_missing_defaults_to_missing_and_explicit_not_supported() -> None:

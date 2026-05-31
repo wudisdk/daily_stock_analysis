@@ -178,6 +178,22 @@ class TestTushareFetcherFetchRawData(unittest.TestCase):
         fetcher._api.daily.assert_not_called()
         fetcher._api.hk_daily.assert_not_called()
 
+    def test_fetch_raw_data_56_prefix_etf_uses_sh_fund_daily(self) -> None:
+        fetcher = self._make_fetcher()
+        fetcher._api.fund_daily.return_value = pd.DataFrame({"trade_date": ["20260101"]})
+
+        with patch.object(fetcher, "_check_rate_limit"):
+            out = fetcher._fetch_raw_data("563230", "20260101", "20260105")
+
+        self.assertIsNotNone(out)
+        fetcher._api.fund_daily.assert_called_once_with(
+            ts_code="563230.SH",
+            start_date="20260101",
+            end_date="20260105",
+        )
+        fetcher._api.daily.assert_not_called()
+        fetcher._api.hk_daily.assert_not_called()
+
     def test_fetch_raw_data_hk_uses_hk_daily(self) -> None:
         fetcher = self._make_fetcher()
         fetcher._api.hk_daily.return_value = pd.DataFrame({"trade_date": ["20260102"]})
@@ -310,4 +326,3 @@ class TestTushareFetcherChipDistribution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

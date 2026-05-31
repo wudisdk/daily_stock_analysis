@@ -38,6 +38,9 @@ def test_docker_entrypoint_repairs_ownership_and_user_permissions() -> None:
     assert "has_unwritable_mount_path" in entrypoint
     assert "can_write_dir_as_app_user" in entrypoint
     assert "DATABASE_FILE" in entrypoint
+    assert "/home/dsa/.longbridge" in entrypoint
+    assert 'HOME="/home/dsa"' in entrypoint
+    assert re.search(r"export\s+HOME\s+exec\s+gosu", entrypoint, re.DOTALL)
     assert re.search(r"\bchown\s+-R\b", entrypoint)
     assert re.search(r"\bchmod\s+-R\s+u\+rwX\b", entrypoint)
     assert re.search(r"gosu\s+\"\$APP_USER:\$APP_GROUP\"\s+test\s+-w", entrypoint)
@@ -51,6 +54,7 @@ def test_docker_compose_injects_env_without_single_file_env_mount() -> None:
     assert "../.env" in common["env_file"]
     assert "../.env:/app/.env" not in common["volumes"]
     assert not any(str(volume).startswith("../.env:") for volume in common["volumes"])
+    assert "../longbridge_tokens:/home/dsa/.longbridge" in common["volumes"]
 
 
 def test_docker_guides_do_not_recommend_single_file_env_bind_mount() -> None:

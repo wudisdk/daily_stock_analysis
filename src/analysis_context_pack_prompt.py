@@ -7,16 +7,17 @@ from collections.abc import Mapping
 from typing import Any, Dict, Iterable, List, Optional
 
 
-_BLOCK_LABELS_ZH = {
+BLOCK_LABELS_ZH = {
     "quote": "行情",
     "daily_bars": "日线",
     "technical": "技术",
     "chip": "筹码",
     "fundamentals": "基本面",
+    "factor_snapshot": "factor_snapshot",
     "news": "新闻",
 }
 
-_BLOCK_LABELS_EN = {
+BLOCK_LABELS_EN = {
     "quote": "quote",
     "daily_bars": "daily bars",
     "technical": "technical",
@@ -40,7 +41,7 @@ _FACTOR_DIMENSION_NAMES = {
     "confidence",
 }
 
-_SENSITIVE_MARKERS = (
+SENSITIVE_MARKERS = (
     "api_key",
     "access_token",
     "refresh_token",
@@ -55,6 +56,24 @@ _SENSITIVE_MARKERS = (
 )
 
 
+def normalize_analysis_context_pack_language(report_language: str = "zh") -> str:
+    return "en" if str(report_language or "").lower() == "en" else "zh"
+
+
+def get_analysis_context_pack_block_labels(report_language: str = "zh") -> Dict[str, str]:
+    return (
+        BLOCK_LABELS_EN
+        if normalize_analysis_context_pack_language(report_language) == "en"
+        else BLOCK_LABELS_ZH
+    )
+
+
+def iter_analysis_context_pack_block_keys(blocks: Mapping[str, Any]) -> List[str]:
+    ordered_keys = [key for key in BLOCK_LABELS_ZH if key in blocks]
+    ordered_keys.extend(key for key in blocks if key not in ordered_keys)
+    return ordered_keys
+
+
 def format_analysis_context_pack_prompt_section(
     pack: Any,
     *,
@@ -63,8 +82,8 @@ def format_analysis_context_pack_prompt_section(
     """Return a low-sensitivity prompt summary for an AnalysisContextPack.
 
     The renderer intentionally ignores item values. P3 consumes the pack as a
-    runtime prompt signal only; full pack storage, API exposure, and quality
-    scoring remain later phases.
+    runtime prompt signal only; P4 exposes a separate low-sensitivity overview,
+    not this prompt string or the full pack.
     """
     payload = _pack_to_dict(pack)
     if not payload:
@@ -75,11 +94,11 @@ def format_analysis_context_pack_prompt_section(
     if not isinstance(subject, Mapping) or not isinstance(blocks, Mapping):
         return ""
 
-    lang = "en" if str(report_language or "").lower() == "en" else "zh"
+    lang = normalize_analysis_context_pack_language(report_language)
     return _format_en(payload) if lang == "en" else _format_zh(payload)
 
 
-def _pack_to_dict(pack: Any) -> Dict[str, Any]:
+def analysis_context_pack_to_dict(pack: Any) -> Dict[str, Any]:
     if pack is None:
         return {}
     if isinstance(pack, Mapping):
@@ -94,6 +113,9 @@ def _pack_to_dict(pack: Any) -> Dict[str, Any]:
             return {}
         return dict(dumped) if isinstance(dumped, Mapping) else {}
     return {}
+
+
+_pack_to_dict = analysis_context_pack_to_dict
 
 
 def _format_zh(payload: Dict[str, Any]) -> str:
@@ -168,9 +190,8 @@ def _block_lines(payload: Dict[str, Any], *, lang: str) -> List[str]:
     if not isinstance(blocks, Mapping):
         return []
 
-    labels = _BLOCK_LABELS_EN if lang == "en" else _BLOCK_LABELS_ZH
-    ordered_keys = [key for key in _BLOCK_LABELS_EN if key in blocks]
-    ordered_keys.extend(key for key in blocks if key not in ordered_keys)
+    labels = get_analysis_context_pack_block_labels(lang)
+    ordered_keys = iter_analysis_context_pack_block_keys(blocks)
 
     lines: List[str] = []
     for key in ordered_keys:
@@ -305,7 +326,7 @@ def _safe_text(value: Any) -> str:
     if not text:
         return ""
     lowered = text.lower()
-    if any(marker in lowered for marker in _SENSITIVE_MARKERS):
+    if any(marker in lowered for marker in SENSITIVE_MARKERS):
         return "[REDACTED]"
     return text
 

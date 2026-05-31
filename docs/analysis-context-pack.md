@@ -1,6 +1,6 @@
-# AnalysisContextPack：P0 盘点、P1/P2 契约与 P3 Runtime Consumption
+# AnalysisContextPack：P0 盘点、P1/P2 契约、P3 Runtime Consumption 与 P4 可见性
 
-本页是 Issue #1389 的专题文档，用于记录当前 DSA 分析上下文的真实来源、消费路径、字段状态边界，以及 `AnalysisContextPack` 内部契约、builder 与运行态消费边界。P0 负责现状盘点和契约边界；P1 只新增内部 schema/envelope、block catalog、类型约定和脱敏序列化；P2 只从 pipeline 已有 artifacts 组装 pack；P3 只把低敏摘要接入普通分析和 Agent 初始 Prompt。
+本页是 Issue #1389 的专题文档，用于记录当前 DSA 分析上下文的真实来源、消费路径、字段状态边界，以及 `AnalysisContextPack` 内部契约、builder、运行态消费与低敏可见性边界。P0 负责现状盘点和契约边界；P1 只新增内部 schema/envelope、block catalog、类型约定和脱敏序列化；P2 只从 pipeline 已有 artifacts 组装 pack；P3 只把低敏摘要接入普通分析和 Agent 初始 Prompt；P4 只把低敏 overview 接入历史详情、同步分析响应、completed task status 和 Web 报告页。
 
 ## 术语与边界
 
@@ -83,10 +83,10 @@ P2 block 组装边界：
 
 - `subject` 仍只写 `code`、`stock_name`、`market` 三字段，不扩 `AnalysisSubject`。
 - `phase` 只接收传入的 `MarketPhaseContext.to_dict()` 产物，不从 `enhanced_context` 反推。
-- `quote` 从 `realtime_quote` 组装；缺失为 `missing`；`source=fallback` 映射为 `fallback`；`fallback_from` 只在 artifact/metadata 显式提供时填写，否则只记录稳定 warning code，不伪造 provider 链。
-- `quote` stale 只透传 `price_stale`、`quote_stale`、`quote_stale_seconds` 等显式 marker；builder 不推断新鲜度。
+- `quote` 从 `realtime_quote` 组装；缺失为 `missing`；`source=fallback` 或显式 `fallback_from` 映射为 `fallback`，但 `source` 保留真实成功源；`fallback_from` 只在 artifact/metadata 显式提供时填写，否则只记录稳定 warning code，不伪造 provider 链。
+- `quote` 会透传 #1386 P3 的 `fetched_at`、`provider_timestamp`、`is_stale`、`stale_seconds`、`fallback_from`。状态优先级固定为 `STALE > FALLBACK > AVAILABLE`：`is_stale=True`、`price_stale`、`quote_stale`、`quote_stale_seconds` 等显式 marker 标为 `stale`；`stale_seconds` 且 `is_stale=False` 只是元数据，不单独推断 stale。builder 只映射上游 artifact，不做质量评分。
 - `daily_bars` 只表达完整日线窗口，优先读 `base_context.today`、`base_context.yesterday`、`base_context.date`、`base_context.data_missing`；date-only 放入 `value` 或 `metadata`，不写入 `timestamp`。
-- `enhanced_context.today.data_source` 为 `realtime:*` 时，只影响 `technical`：block 标 `partial`，相关 item 标 `estimated`，warning 使用 `intraday_realtime_overlay`。
+- `enhanced_context.today` 上的 `is_partial_bar`、`is_estimated`、`estimated_fields` 优先进入 `technical`；缺失时仍兼容 `enhanced_context.today.data_source` 为 `realtime:*` 的旧 heuristic。partial/estimated 只进入 `technical`，`daily_bars` 不承载 partial/estimated，warning 使用 `intraday_realtime_overlay`。
 - `technical` 优先复用 `trend_result.to_dict()`；无 trend artifact 时为 `missing`。
 - `chip` 复用 `chip_data.to_dict()`；无 chip artifact 默认 `missing`，只有输入 metadata/artifact 明确 not_supported 时才标 `not_supported`。
 - `fundamentals` 只读 `fundamental_context` 参数；`ok` 映射为 `available`，`not_supported` 映射为 `not_supported`，`partial` 映射为 `partial`，`failed` 映射为 `missing` + 稳定 reason code；不写入 `errors[]` 原文。
@@ -103,7 +103,25 @@ P3 在 P2 `AnalysisContextBuilder` 之后接入运行态消费，但消费面限
 
 Agent 路径同样只传 summary。`AgentExecutor._build_user_message()` 在 market phase 段之后、pre-fetched JSON 之前插入 summary；`AgentOrchestrator._build_context()` 只把 summary 放入 `ctx.meta["analysis_context_pack_summary"]`，禁止写入 `ctx.data`；`BaseAgent._build_messages()` 在 market phase user message 之后、`_inject_cached_data()` 之前插入 summary。Agent 首轮没有复用普通分析新闻检索，`news` block 为 `missing` 是当前 P3 的预期状态。
 
-P3 仍不持久化完整 pack，不新增 API/Web/Bot/Desktop 字段，不改变报告 JSON schema，不把 summary 写入 `analysis_history.context_snapshot`、task status 或 report metadata；history snapshot 和 diagnostic snapshot 会剥离 `market_phase_context`、`analysis_context_pack`、`analysis_context_pack_summary` 等 runtime prompt key。Agent 工具级 pack cache 复用、历史 / 任务状态 / Web 可见性、通知展示和数据质量评分留给 P4/P5 后续阶段。
+P3 当时不持久化完整 pack，不新增 API/Web/Bot/Desktop 字段，不改变报告 JSON schema，不把 summary 写入 `analysis_history.context_snapshot`、task status 或 report metadata；history snapshot 和 diagnostic snapshot 会剥离 `market_phase_context`、`analysis_context_pack`、`analysis_context_pack_summary` 等 runtime prompt key。P4 在此基础上新增低敏 overview，可见性只覆盖历史详情、同步分析响应、completed task status 和 Web 报告页；Agent 工具级 pack cache 复用、通知展示和数据质量评分仍留给后续阶段。
+
+## P4 历史记录、任务状态与 Web 可见性
+
+P4 把 P3 已构建的 `AnalysisContextPack` 投影为公共低敏 `analysis_context_pack_overview`。该 overview 由专用 renderer 生成，公共 API 不允许直接返回 `AnalysisContextPack.to_safe_dict()` 或完整 pack dump。renderer 只输出白名单字段：`pack_version`、`created_at`、`subject.code` / `stock_name` / `market`、数据块 `key` / `label` / `status` / `source` / `warnings` / `missing_reasons`、按 block status 计数的 `counts`、顶层 `data_quality.warnings` 和 `metadata.trigger_source` / `metadata.news_result_count`。
+
+overview 不输出 `blocks.*.items`、`items.value`、`news.content`、`trend_result`、`chip`、`fundamental_context` 原始 payload，也不输出 `api_key`、`token`、`cookie`、`webhook_url`、`password`、`secret`、`authorization`、`sendkey`、`license_key` 等敏感键或值。
+
+P4 持久化面只在 `analysis_history.context_snapshot` 顶层写入 `analysis_context_pack_overview`。运行态 prompt 字段仍会从 `enhanced_context` 和 history snapshot 中剥离：`market_phase_context`、`analysis_context_pack`、`analysis_context_pack_summary` 不进入公开历史详情或任务状态。`SAVE_CONTEXT_SNAPSHOT=false` 时不持久化 overview，旧记录或缺少 overview 的记录继续返回空字段，不影响历史详情读取。
+
+公共 API 字段固定为 `report.details.analysis_context_pack_overview`，Web 端经深度 camelCase 后读取 `analysisContextPackOverview`。接线面包括：
+
+- `GET /api/v1/history/{record_id}` 历史详情。
+- 同步 `POST /api/v1/analysis/analyze` 返回的 `AnalysisResultResponse.report.details`。
+- completed `GET /api/v1/analysis/status/{task_id}`，包括内存队列 enrichment 和 DB completed fallback。
+
+API 返回给 Web 的 `details.context_snapshot` 会通过 `sanitize_context_snapshot_for_api()` 剥离顶层 `analysis_context_pack_overview`，避免 raw snapshot 面板重复展示或被当作完整上下文导出；overview 只从 `extract_analysis_context_pack_overview()` 单独取出。Agent 路径与普通分析路径写入同一 overview 形状，Agent 无新闻计数时 `metadata.news_result_count` 可为空。
+
+P4 Web 展示只在报告详情页渲染 `AnalysisContextSummary`，位置在策略点位和资讯之后、运行诊断之前；该区域默认折叠，折叠头部展示可用数、缺失数、非零的其他状态计数和触发来源，展开后展示数据块状态 badge、来源、warning、missing reason、状态计数和新闻结果数。无 overview 时不渲染占位。P4 不覆盖 pending/processing TaskPanel 或 SSE 进行中可见性，不改通知摘要、Bot/Desktop 专属展示、`market_review` overview、P5 数据质量评分或 `fetch_failed` 细分。
 
 ## 字段质量状态
 
@@ -195,7 +213,7 @@ P0 只记录历史消费面。完整 pack 不应默认公开到历史详情或�
 ## 兼容与安全边界
 
 - `analysis_history.context_snapshot.enhanced_context.date` 是当前回测日期解析兼容点，P1/P2 不能在没有迁移的情况下破坏。
-- 完整 pack 不默认公开到历史、API、Web 或通知；公共面优先展示摘要、来源、fallback、stale、missing count 等低敏信息。
+- 完整 pack 不默认公开到历史、API、Web 或通知；P4 只公开 `analysis_context_pack_overview` 低敏摘要、来源、fallback、stale、missing reason 和 block status count。
 - pack、日志、历史快照和 API 响应不得记录 API key、token、cookie、完整 webhook URL、邮箱密码、私有环境变量或其他密钥。
 - `source`、`timestamp`、`fallback`、`stale`、`partial` 等质量元数据只用于解释输入限制，不用于阻断分析；除非现有核心路径本来就是 fail-fast。
 - #1386 的盘前 / 盘中 phase 感知是后续 `phase` / `data_quality` 字段的重要背景；P0 只记录关系，不接入 runtime。

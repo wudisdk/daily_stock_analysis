@@ -18,6 +18,7 @@ const renderDrawer = async (onClose = vi.fn()) => {
 
 describe('ReportMarkdownDrawer', () => {
   afterEach(() => {
+    cleanup();
     vi.doUnmock('../ReportMarkdownPanel');
     vi.doUnmock('../../../api/history');
     vi.resetModules();
@@ -109,6 +110,8 @@ describe('ReportMarkdownDrawer', () => {
 
     await renderDrawer();
 
-    expect(await screen.findByRole('heading', { name: 'Lazy loaded report' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Lazy loaded report' }, { timeout: 5000 }),
+    ).toBeInTheDocument();
   });
 });

@@ -12,9 +12,11 @@ A股自选股智能分析系统 - 搜索服务模块
 """
 
 import logging
+import html
 import re
 import threading
 import time
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -1784,6 +1786,192 @@ class BraveSearchProvider(BaseSearchProvider):
         )
 
 
+class NewsRSSSearchProvider(BaseSearchProvider):
+    """No-key news RSS fallback backed by public news-search feeds."""
+
+    _GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
+    _BING_NEWS_RSS_URL = "https://www.bing.com/news/search"
+    _TIMEOUT_SECONDS = 8
+    _USER_AGENT = (
+        "Mozilla/5.0 (compatible; daily-stock-analysis/1.0; "
+        "+https://github.com/wudisdk/daily_stock_analysis)"
+    )
+
+    def __init__(self) -> None:
+        super().__init__(["news-rss"], "NewsRSS")
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    @staticmethod
+    def _clean_text(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        text = html.unescape(value)
+        text = re.sub(r"<[^>]+>", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _child_text(item: ET.Element, name: str) -> str:
+        wanted = name.lower()
+        for child in item:
+            local_name = child.tag.rsplit("}", 1)[-1].lower()
+            if local_name == wanted:
+                return child.text or ""
+        return ""
+
+    @staticmethod
+    def _child_attr(item: ET.Element, name: str, attr: str) -> str:
+        wanted = name.lower()
+        for child in item:
+            local_name = child.tag.rsplit("}", 1)[-1].lower()
+            if local_name == wanted:
+                return child.attrib.get(attr, "")
+        return ""
+
+    @staticmethod
+    def _published_date(value: str) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).date().isoformat()
+
+    @staticmethod
+    def _within_window(published_date: Optional[str], days: int) -> bool:
+        if not published_date:
+            return True
+        try:
+            published = date.fromisoformat(published_date)
+        except ValueError:
+            return True
+        today = datetime.now(timezone.utc).date()
+        return today - timedelta(days=max(1, days)) <= published <= today + timedelta(days=1)
+
+    def _feed_requests(self, query: str) -> List[Tuple[str, Dict[str, Any], str]]:
+        return [
+            (
+                self._GOOGLE_NEWS_RSS_URL,
+                {"q": query, "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans"},
+                "Google News RSS",
+            ),
+            (
+                self._GOOGLE_NEWS_RSS_URL,
+                {"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"},
+                "Google News RSS",
+            ),
+            (
+                self._BING_NEWS_RSS_URL,
+                {"q": query, "format": "RSS", "mkt": "zh-CN"},
+                "Bing News RSS",
+            ),
+        ]
+
+    def _parse_feed_items(
+        self,
+        content: str,
+        *,
+        source_label: str,
+        days: int,
+        max_results: int,
+    ) -> List[SearchResult]:
+        root = ET.fromstring(content)
+        items = root.findall(".//item")
+        results: List[SearchResult] = []
+        for item in items:
+            title = self._clean_text(self._child_text(item, "title"))
+            link = self._clean_text(self._child_text(item, "link"))
+            snippet = self._clean_text(self._child_text(item, "description"))
+            published_date = self._published_date(self._child_text(item, "pubDate"))
+            if not title or not link or not self._within_window(published_date, days):
+                continue
+            source = self._clean_text(self._child_text(item, "source")) or self._clean_text(
+                self._child_attr(item, "source", "url")
+            )
+            results.append(
+                SearchResult(
+                    title=title,
+                    snippet=snippet[:500],
+                    url=link,
+                    source=source or source_label,
+                    published_date=published_date,
+                )
+            )
+            if len(results) >= max_results:
+                break
+        return results
+
+    def _do_search(
+        self,
+        query: str,
+        api_key: str,
+        max_results: int,
+        days: int = 7,
+    ) -> SearchResponse:
+        del api_key
+        started = time.time()
+        headers = {"User-Agent": self._USER_AGENT, "Accept": "application/rss+xml, application/xml;q=0.9,*/*;q=0.8"}
+        results: List[SearchResult] = []
+        errors: List[str] = []
+        seen: set[Tuple[str, str]] = set()
+        request_limit = max(max_results * 4, 10)
+
+        for url, params, source_label in self._feed_requests(query):
+            try:
+                response = _get_with_retry(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=self._TIMEOUT_SECONDS,
+                )
+                if response.status_code != 200:
+                    errors.append(f"{source_label}: HTTP {response.status_code}")
+                    continue
+                feed_results = self._parse_feed_items(
+                    response.text,
+                    source_label=source_label,
+                    days=days,
+                    max_results=request_limit,
+                )
+                for item in feed_results:
+                    key = (item.title.lower(), item.url)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    results.append(item)
+                    if len(results) >= max_results:
+                        break
+                if len(results) >= max_results:
+                    break
+            except Exception as exc:
+                errors.append(f"{source_label}: {exc}")
+
+        if results:
+            logger.info("[NewsRSS] search completed, query='%s', returned %s result(s)", query, len(results))
+            return SearchResponse(
+                query=query,
+                results=results[:max_results],
+                provider=self.name,
+                success=True,
+                search_time=time.time() - started,
+            )
+
+        error_message = "; ".join(errors[:3]) if errors else "News RSS returned no results"
+        return SearchResponse(
+            query=query,
+            results=[],
+            provider=self.name,
+            success=not errors,
+            error_message=error_message if errors else None,
+            search_time=time.time() - started,
+        )
+
+
 class SearXNGSearchProvider(BaseSearchProvider):
     """
     SearXNG search engine (self-hosted, no quota).
@@ -2322,7 +2510,12 @@ class SearchService:
             self._providers.append(MiniMaxSearchProvider(minimax_keys))
             logger.info(f"已配置 MiniMax 搜索，共 {len(minimax_keys)} 个 API Key")
 
-        # 6. SearXNG（自建实例优先；未配置时可自动发现公共实例）
+        # 6. No-key public news RSS fallback for hosted runs.
+        if searxng_public_instances_enabled:
+            self._providers.append(NewsRSSSearchProvider())
+            logger.info("已启用 NewsRSS 公共新闻搜索兜底")
+
+        # 7. SearXNG（自建实例优先；未配置时可自动发现公共实例）
         searxng_provider = SearXNGSearchProvider(
             searxng_base_urls,
             use_public_instances=bool(searxng_public_instances_enabled and not searxng_base_urls),
@@ -2334,7 +2527,7 @@ class SearchService:
             else:
                 logger.info("已启用 SearXNG 公共实例自动发现模式")
 
-        # 7. Anspire Search（实时智能搜索优化）
+        # 8. Anspire Search（实时智能搜索优化）
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")

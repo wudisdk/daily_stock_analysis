@@ -56,6 +56,7 @@ def test_ai_replay_validation_workflow_runs_replay_tools_and_uploads_outputs() -
     assert "Auto-selected baseline_run_id" in text
     assert "actions/workflows/00-daily-analysis.yml/runs?status=success" in text
     assert "No price artifact or price_source_run_id provided; skipping replay outcome resolution." in text
+    assert "must be a numeric GitHub Actions run id" in text
     assert "python -m src.services.ai_snapshot_audit" in text
     assert "python -m src.services.ai_snapshot_replay_queue" in text
     assert "python -m src.services.ai_snapshot_turnover" in text
@@ -78,6 +79,9 @@ def test_ai_replay_validation_workflow_runs_replay_tools_and_uploads_outputs() -
     assert "cost_buffer_status" in text
     assert 'cp "$price_audit_path" replay-validation/stock_ai_candidate_price_history_audit_latest.json' in text
     assert "--no-fail" not in text
+    assert "head -n 1" not in text
+    assert "[.workflow_runs[] | select(" in text
+    assert "[.artifacts[] | select(" in text
     assert "price_source_run_id" in text
     assert "baseline_run_id" in text
     assert "baseline_artifact_name" in text

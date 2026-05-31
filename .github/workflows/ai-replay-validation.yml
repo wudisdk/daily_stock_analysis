@@ -80,6 +80,17 @@ jobs:
             echo "source_run_id is required for replay validation" >&2
             exit 1
           fi
+          for run_id_var in EVENT_SOURCE_RUN_ID EVENT_BASELINE_RUN_ID EVENT_PRICE_SOURCE_RUN_ID; do
+            run_id_value="${!run_id_var:-}"
+            case "$run_id_value" in
+              ""|*[!0-9]*)
+                if [ -n "$run_id_value" ]; then
+                  echo "${run_id_var} must be a numeric GitHub Actions run id" >&2
+                  exit 1
+                fi
+                ;;
+            esac
+          done
 
           echo "SOURCE_RUN_ID=$EVENT_SOURCE_RUN_ID" >> "$GITHUB_ENV"
           echo "ANALYSIS_ARTIFACT_NAME=$EVENT_ANALYSIS_ARTIFACT_NAME" >> "$GITHUB_ENV"
@@ -92,8 +103,7 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_run" ] && [ -z "$EVENT_BASELINE_RUN_ID" ]; then
             baseline_run_id="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/00-daily-analysis.yml/runs?status=success&per_page=20" \
-                --jq ".workflow_runs[] | select(.id != ${EVENT_SOURCE_RUN_ID} and .conclusion == \"success\") | .id" \
-                | head -n 1
+                --jq "[.workflow_runs[] | select(.id != ${EVENT_SOURCE_RUN_ID} and .conclusion == \"success\") | .id][0] // \"\""
             )"
             if [ -n "$baseline_run_id" ]; then
               echo "BASELINE_RUN_ID=$baseline_run_id" >> "$GITHUB_ENV"
@@ -112,8 +122,7 @@ jobs:
           if [ -z "$artifact_name" ]; then
             artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts" \
-                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
-                | head -n 1
+                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name][0] // ""'
             )"
           fi
           if [ -z "$artifact_name" ]; then
@@ -136,8 +145,7 @@ jobs:
           if [ -z "$artifact_name" ]; then
             artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts" \
-                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
-                | head -n 1
+                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name][0] // ""'
             )"
           fi
           if [ -z "$artifact_name" ]; then
@@ -199,8 +207,7 @@ jobs:
           if [ -z "$price_artifact_name" ]; then
             price_artifact_name="$(
               gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${price_run_id}/artifacts" \
-                --jq '.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name' \
-                | head -n 1
+                --jq '[.artifacts[] | select(.expired == false and (.name | startswith("analysis-reports-"))) | .name][0] // ""'
             )"
           fi
           if [ -z "$price_artifact_name" ]; then

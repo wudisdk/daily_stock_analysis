@@ -938,6 +938,29 @@ class TestMarketAnalyzerBypassFix:
         assert isinstance(result, str) and len(result) > 0
         ma.analyzer.generate_text.assert_called_once()
 
+    def test_market_news_uses_market_specific_search_method(self):
+        """Market review should not route broad market queries through stock-news relevance."""
+        from src.market_analyzer import MarketAnalyzer
+
+        ma = MarketAnalyzer.__new__(MarketAnalyzer)
+        ma.region = "cn"
+        ma.profile = SimpleNamespace(news_queries=["market query"])
+        ma.search_service = MagicMock()
+        ma.search_service.search_market_news.return_value = SimpleNamespace(
+            results=[SimpleNamespace(title="market catalyst")]
+        )
+
+        result = ma.search_market_news()
+
+        assert [item.title for item in result] == ["market catalyst"]
+        ma.search_service.search_market_news.assert_called_once_with(
+            "market query",
+            market_region="cn",
+            market_name="大盘",
+            max_results=3,
+        )
+        ma.search_service.search_stock_news.assert_not_called()
+
     def test_market_review_uses_8192_max_tokens(self):
         """generate_market_review() should request a larger output budget to avoid truncation."""
         from src.market_analyzer import MarketOverview, MarketIndex

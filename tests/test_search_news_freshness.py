@@ -116,6 +116,80 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         for item in resp.results:
             self.assertRegex(item.published_date or "", r"^\d{4}-\d{2}-\d{2}$")
 
+    def test_search_market_news_keeps_undated_market_fallback(self) -> None:
+        """Broad market review search should not require direct company relevance."""
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        provider = SimpleNamespace(
+            is_available=True,
+            name="MarketProvider",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "A股市场热点切换，半导体板块活跃",
+                            None,
+                            snippet="市场主线轮动，成交保持活跃。",
+                            source="财经媒体",
+                        )
+                    ]
+                )
+            ),
+        )
+        service._providers = [provider]
+
+        resp = service.search_market_news(
+            "A股 市场 热点 板块",
+            market_region="cn",
+            market_name="大盘",
+            max_results=3,
+        )
+
+        self.assertTrue(resp.success)
+        self.assertEqual([item.title for item in resp.results], ["A股市场热点切换，半导体板块活跃"])
+        self.assertIsNone(resp.results[0].published_date)
+        provider.search.assert_called_once()
+        args, kwargs = provider.search.call_args
+        self.assertEqual(args[0], "A股 市场 热点 板块")
+        self.assertEqual(kwargs["days"], 3)
+
+    def test_search_market_news_does_not_fallback_to_stale_dated_news(self) -> None:
+        """Undated fallback should not reintroduce explicitly stale market news."""
+        stale_date = (datetime.now().date() - timedelta(days=30)).isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        provider = SimpleNamespace(
+            is_available=True,
+            name="MarketProvider",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result("stale market item", stale_date),
+                    ]
+                )
+            ),
+        )
+        service._providers = [provider]
+
+        resp = service.search_market_news(
+            "A股 市场 热点 板块",
+            market_region="cn",
+            market_name="大盘",
+            max_results=3,
+        )
+
+        self.assertTrue(resp.success)
+        self.assertEqual(resp.results, [])
+        self.assertEqual(resp.provider, "Filtered")
+
     def test_search_stock_news_overfetch_before_filter(self) -> None:
         """Provider request size should be increased before filtering."""
         service, mock_search = self._create_service_with_mock_provider(

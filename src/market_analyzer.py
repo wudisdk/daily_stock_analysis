@@ -443,12 +443,20 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             market_names = {"cn": "大盘", "us": "US market", "hk": "HK market"}
             market_name = market_names.get(self.region, "大盘")
             for query in search_queries:
-                response = self.search_service.search_stock_news(
-                    stock_code="market",
-                    stock_name=market_name,
-                    max_results=3,
-                    focus_keywords=query.split()
-                )
+                if hasattr(self.search_service, "search_market_news"):
+                    response = self.search_service.search_market_news(
+                        query,
+                        market_region=self.region,
+                        market_name=market_name,
+                        max_results=3,
+                    )
+                else:
+                    response = self.search_service.search_stock_news(
+                        stock_code="market",
+                        stock_name=market_name,
+                        max_results=3,
+                        focus_keywords=query.split()
+                    )
                 if response and response.results:
                     all_news.extend(response.results)
                     logger.info(f"[大盘] 搜索 '{query}' 获取 {len(response.results)} 条结果")

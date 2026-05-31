@@ -3235,6 +3235,151 @@ class SearchService:
             search_time=response.search_time,
         )
 
+    def search_market_news(
+        self,
+        query: str,
+        *,
+        market_region: str = "cn",
+        market_name: str = "",
+        max_results: int = 3,
+    ) -> SearchResponse:
+        """Search broad market catalysts without requiring direct company relevance."""
+        search_days = self._effective_news_window_days()
+        provider_max_results = self._provider_request_size(max_results)
+        prefer_chinese = market_region != "us" or self._contains_chinese_text(query)
+        cache_key = self._cache_key(
+            (
+                f"{query}|market_region={market_region}|market_name={market_name}|"
+                f"market_news_pref={'zh' if prefer_chinese else 'default'}"
+            ),
+            max_results,
+            search_days,
+        )
+        cached, cache_owner, cache_event = self._get_cached_or_reserve(cache_key)
+        if cached is not None:
+            return cached
+
+        if not cache_owner and cache_event is not None:
+            cached = self._wait_for_cached(cache_key, cache_event)
+            if cached is not None:
+                return cached
+            cached, cache_owner, cache_event = self._get_cached_or_reserve(cache_key)
+            if cached is not None:
+                return cached
+
+        try:
+            had_provider_success = False
+            best_loose_response: Optional[SearchResponse] = None
+            best_loose_preferred_count = 0
+
+            for provider in self._providers:
+                if not provider.is_available:
+                    continue
+
+                search_kwargs: Dict[str, Any] = {}
+                if isinstance(provider, TavilySearchProvider):
+                    search_kwargs["topic"] = "news"
+                elif isinstance(provider, BraveSearchProvider):
+                    if prefer_chinese:
+                        search_kwargs.update({"search_lang": "zh-hans", "country": "CN"})
+                    elif market_region == "us":
+                        search_kwargs.update({"search_lang": "en", "country": "US"})
+
+                response = provider.search(
+                    query,
+                    provider_max_results,
+                    days=search_days,
+                    **search_kwargs,
+                )
+                had_provider_success = had_provider_success or bool(response.success)
+                if not response.success or not response.results:
+                    logger.warning(
+                        "%s market-news search failed: %s",
+                        provider.name,
+                        response.error_message,
+                    )
+                    continue
+
+                strict_response = self._filter_news_response(
+                    response,
+                    search_days=search_days,
+                    max_results=provider_max_results,
+                    log_scope=f"{market_region}:{provider.name}:market_news",
+                )
+                if strict_response.results:
+                    language_response, _preferred_count = self._prioritize_news_language(
+                        strict_response,
+                        prefer_chinese=prefer_chinese,
+                    )
+                    limited_response = self._limit_search_response(
+                        language_response,
+                        max_results=max_results,
+                    )
+                    self._put_cache(cache_key, limited_response)
+                    return limited_response
+
+                undated_results = [
+                    item
+                    for item in response.results
+                    if self._normalize_news_publish_date(item.published_date) is None
+                ][:provider_max_results]
+                if not undated_results:
+                    continue
+
+                loose_response = SearchResponse(
+                    query=response.query,
+                    results=undated_results,
+                    provider=response.provider,
+                    success=response.success,
+                    error_message=response.error_message,
+                    search_time=response.search_time,
+                )
+                language_response, preferred_count = self._prioritize_news_language(
+                    loose_response,
+                    prefer_chinese=prefer_chinese,
+                )
+                limited_response = self._limit_search_response(
+                    language_response,
+                    max_results=max_results,
+                )
+                if self._is_better_preferred_news_response(
+                    limited_response,
+                    candidate_preferred_count=preferred_count,
+                    best_response=best_loose_response,
+                    best_preferred_count=best_loose_preferred_count,
+                ):
+                    best_loose_response = limited_response
+                    best_loose_preferred_count = preferred_count
+
+            if best_loose_response is not None:
+                logger.info(
+                    "Market-news search used undated fallback for query '%s' with provider %s",
+                    query,
+                    best_loose_response.provider,
+                )
+                self._put_cache(cache_key, best_loose_response)
+                return best_loose_response
+
+            if had_provider_success:
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    provider="Filtered",
+                    success=True,
+                    error_message=None,
+                )
+
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider="None",
+                success=False,
+                error_message="No market-news search provider was available or successful",
+            )
+        finally:
+            if cache_owner and cache_event is not None:
+                self._release_cache_fill(cache_key, cache_event)
+
     def search_stock_news(
         self,
         stock_code: str,
